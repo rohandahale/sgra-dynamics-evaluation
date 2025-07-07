@@ -81,8 +81,12 @@ u_times=[]
 cmapsl = []
 for i in range(len(times)-1):
     if times[i+1]-times[i] > mean_dt:
+        if i==0:
+            u_times.append(times[i+1]-1.1*mean_dt)
         j=0
         while u_times[len(u_times)-1] < times[i+1]-mean_dt:
+            if i==0:
+                del u_times[i]
             u_times.append(times[i]+j*mean_dt)
             cmapsl.append('binary')
             j=j+1
@@ -110,7 +114,7 @@ for p in paths.keys():
 def linear_interpolation(x, x1, y1, x2, y2):
     return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
 
-def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cmapsl, interp='gaussian', fps=20):
+def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cmapsl, interp='bicubic', fps=20):
     num_subplots=len(paths.keys())
     fig, ax = plt.subplots(nrows=1, ncols=len(paths.keys()), figsize=(linear_interpolation(num_subplots, 2, 8, 7, 16),linear_interpolation(num_subplots, 2, 4, 7, 3)))
    #fig.tight_layout()

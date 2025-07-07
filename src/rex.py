@@ -75,6 +75,8 @@ if args.modelingmv!='none':
 obs = eh.obsdata.load_uvfits(args.data)
 obs, times, obslist_t, polpaths = process_obs(obs, args, paths)
 
+outpath_csv={}
+
 ######################################################################
 
 fig, ax = plt.subplots(nrows=2, ncols=3, figsize=(32,8), sharex=True)
@@ -107,6 +109,7 @@ for p in paths.keys():
         polvpaths[p]=paths[p]
 
 for p in paths.keys():
+    outpath_csv[p]= outpath+f'_{p}.csv'
     mv=eh.movie.load_hdf5(paths[p])
 
     imlist = [mv.get_image(t) for t in times]
@@ -115,8 +118,10 @@ for p in paths.keys():
     # find ring center with the averaged image
     xc,yc = fit_ring(mv_ave)
     ring_outputs = [extract_ring_quantites(im_f,xc=xc,yc=yc) for im_f in tqdm(imlist)]
-    table = pd.DataFrame(ring_outputs, columns=["time_utc", "D","Derr","W","Werr","PAori","PAerr","papeak","A","Aerr","fc","xc","yc","fwhm_maj","fwhm_min","hole_flux","outer_flux","ring_flux","totalflux","hole_dflux","outer_dflux","ring_dflux"])
+    table = pd.DataFrame(ring_outputs, columns=["time", "D","Derr","W","Werr", "true_D", "true_Derr", "PAori","PAerr","papeak","A","Aerr","fc","xc","yc","fwhm_maj","fwhm_min","hole_flux","outer_flux","ring_flux","totalflux","hole_dflux","outer_dflux","ring_dflux"])
     #table_vals[p]=np.round(np.mean(np.array(mnet_tab)),3)
+    
+    table.to_csv(outpath_csv[p], index=False)
 
     mc=colors[p]
     alpha = 1.0

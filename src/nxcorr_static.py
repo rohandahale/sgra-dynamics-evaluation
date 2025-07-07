@@ -66,7 +66,7 @@ obs, obs_t, obslist_t, splitObs, times, I, snr, w_norm = process_obs_weights(obs
 
 ######################################################################
 
-fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(21,6), sharex=True)
+fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(21,5), sharex=True)
 
 ax[0].set_ylabel('nxcorr (I)')
 ax[1].set_ylabel('nxcorr (Q)')
@@ -79,9 +79,9 @@ ax[2].set_xlabel('Time (UTC)')
 #ax[3].set_xlabel('Time (UTC)')
 
 
-ax[0].set_ylim(0,7)
-ax[1].set_ylim(0,7)
-ax[2].set_ylim(0,7)
+ax[0].set_ylim(-0.1,1.1)
+ax[1].set_ylim(-0.1,1.1)
+ax[2].set_ylim(-0.1,1.1)
 #ax[3].set_ylim(0,7)
 
 
@@ -138,55 +138,48 @@ for pol in pollist:
     s=0
     for p in polpaths.keys():
         mv=eh.movie.load_hdf5(polpaths[p])
-        mv_list= mv.im_list()
-        mv_list2=[]
-        for im in mv_list:
-            im = im.regrid_image(fov, npix)
-            mv_list2.append(im)
-        mv=eh.movie.merge_im_list(mv_list2)
+        imlist = [mv.get_image(t).regrid_image(fov, npix) for t in times]
+        imlist_t = [mvt.get_image(t).regrid_image(fov, npix) for t in times]
         
-        imlist = [mv.get_image(t) for t in times]
-        imlistarr=[]
-        for im in imlist:
-            imlistarr.append(im.imarr(pol=pol))
-    
-        median = np.median(imlistarr,axis=0)
-        for im in imlist:
-            if pol=='I':
-                im.ivec= median.flatten()
-            elif pol=='Q':
-                im.qvec= median.flatten()
-            elif pol=='U':
-                im.uvec= median.flatten()
-            elif pol=='V':
-                im.vvec= median.flatten()
-    
-
-        imlist_t =[mvt.get_image(t) for t in times]
-        imlistarr=[]
-        for im in imlist_t:
-            imlistarr.append(im.imarr(pol=pol))
-        
-        median = np.median(imlistarr,axis=0)
-        for im in imlist_t:
-            if pol=='I':
-                im.ivec= median.flatten()
-            elif pol=='Q':
-                im.qvec= median.flatten()
-            elif pol=='U':
-                im.uvec= median.flatten()
-            elif pol=='V':
-                im.vvec= median.flatten()
-
         nxcorr_t=[]
+        nxs_cri=[]
         nxcorr_tab=[]
-
-        i=0
-        for im in imlist:
-            im = im.regrid_image(160*eh.RADPERUAS, 32)
-            imlist_t[i] = imlist_t[i].regrid_image(160*eh.RADPERUAS, 32)
-            nxcorr=imlist_t[i].compare_images(im, pol=pol, metric=['nxcorr'])
-            nxcorr_t.append(nxcorr[0][0]+s)
+        
+        i = 0
+        im_array =[]
+        imt_array =[]
+        imlistarr =[]
+        imlistarr_t =[]
+        
+        for im, imt in zip(imlist, imlist_t):
+            shift = imt.align_images([im])[1]
+            im = im.shift(shift[0])
+            
+            im = im.regrid_image(160*eh.RADPERUAS, 64)
+            imt = imt.regrid_image(160*eh.RADPERUAS, 64)
+            
+            im_array.append(im)
+            imt_array.append(imt)
+            imlistarr.append(im.imarr(pol=pol))
+            imlistarr_t.append(im.imarr(pol=pol))
+            
+        median = np.median(imlistarr,axis=0)
+        median_t = np.median(imlistarr_t,axis=0)
+        
+        for im, imt in zip(im_array, imt_array):
+            if pol=='I':
+                im.ivec= np.array(median).flatten()
+                imt.ivec= np.array(median_t).flatten()
+            elif pol=='Q':
+                im.qvec= np.array(median).flatten()
+                imt.qvec= np.array(median_t).flatten()
+            elif pol=='U':
+                im.uvec= np.array(median).flatten()
+                imt.uvec= np.array(median_t).flatten()
+            
+        for im, imt in zip(im_array, imt_array):
+            nxcorr=imt.compare_images(im, pol=pol, metric=['nxcorr'])
+            nxcorr_t.append(nxcorr[0][0])
             nxcorr_tab.append(nxcorr[0][0])
             i=i+1
         
@@ -201,8 +194,8 @@ for pol in pollist:
             ax[k].plot(times, nxcorr_t,  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha, label=labels[p])
         else:
             ax[k].plot(times, nxcorr_t,  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha)  
-    
-        ax[k].hlines(s+1, xmin=10.5, xmax=14.5, color=colors[p], ls='--', lw=1.5, zorder=0)
+        if s==0:
+            ax[k].hlines(1, xmin=10.5, xmax=14.5, color='k', ls='--', lw=1.5, zorder=0)
         ax[k].yaxis.set_ticklabels([])
         s=s+1
     
@@ -212,7 +205,7 @@ table_vals.rename(index={'I':'nxcorr (I)'},inplace=True)
 table_vals.rename(index={'Q':'nxcorr (Q)'},inplace=True)
 table_vals.rename(index={'U':'nxcorr (U)'},inplace=True)
 #table_vals.rename(index={'V':'nxcorr (V)'},inplace=True)
-table_vals.replace(0.000, '-', inplace=True)
+#table_vals.replace(0.000, '-', inplace=True)
 
 col_labels=[]
 for p in table_vals.keys():
@@ -231,5 +224,5 @@ for c in table.get_children():
     c.set_text_props(color='black')
     c.set_facecolor('none')
     c.set_edgecolor('black')
-ax[0].legend(ncols=len(paths.keys()), loc='best',  bbox_to_anchor=(3.5, 1.2), markerscale=5.0)
+ax[0].legend(ncols=len(paths.keys()), loc='best',  bbox_to_anchor=(3.3, 1.2), markerscale=5.0)
 plt.savefig(args.outpath+'.png', bbox_inches='tight', dpi=300)

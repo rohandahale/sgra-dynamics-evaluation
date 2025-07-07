@@ -73,7 +73,7 @@ blur   = 0 * eh.RADPERUAS
 
 imlistIs = {}
 for p in paths.keys():
-    im = eh.image.load_fits(paths[p])
+    im = eh.image.load_fits(paths[p]).regrid_image(fov, npix)
     #im.ivec = im.ivec/im.total_flux()
     if p=='truth':
         if args.scat!='onsky':
@@ -85,7 +85,7 @@ def linear_interpolation(x, x1, y1, x2, y2):
     return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
 
 
-def static(Is, titles, paths, outpath='./', fov=None, interp='gaussian'):
+def static(Is, titles, paths, outpath='./', fov=None, interp='bicubic'):
     num_subplots=len(paths.keys())
     fig, ax = plt.subplots(nrows=1, ncols=len(paths.keys()), figsize=(linear_interpolation(num_subplots, 2, 8, 7, 16),linear_interpolation(num_subplots, 2, 4, 7, 3)))
    #fig.tight_layout()
@@ -103,13 +103,21 @@ def static(Is, titles, paths, outpath='./', fov=None, interp='gaussian'):
 
     
     for i, p in enumerate(Is.keys()):
-        ax[i].clear() 
-        TBfactor = 3.254e13/(Is[p].rf**2 * Is[p].psize**2)/1e9
-        im =ax[i].imshow(np.array(Is[p].imarr(pol='I'))*TBfactor, cmap='afmhot_us', interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
-    
-        ax[i].set_title(titles[p], fontsize=18)
-        ax[i].set_xticks([]), ax[i].set_yticks([])
-        
+        if len(Is.keys())>1:
+            ax[i].clear() 
+            TBfactor = 3.254e13/(Is[p].rf**2 * Is[p].psize**2)/1e9
+            im =ax[i].imshow(np.array(Is[p].imarr(pol='I'))*TBfactor, cmap='afmhot_us', interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+
+            ax[i].set_title(titles[p], fontsize=18)
+            ax[i].set_xticks([]), ax[i].set_yticks([])
+        else:
+            ax.clear() 
+            TBfactor = 3.254e13/(Is[p].rf**2 * Is[p].psize**2)/1e9
+            im =ax.imshow(np.array(Is[p].imarr(pol='I'))*TBfactor, cmap='afmhot_us', interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+
+            ax.set_title(titles[p], fontsize=18)
+            ax.set_xticks([]), ax.set_yticks([])
+
     
     ax1 = fig.add_axes([linear_interpolation(num_subplots, 2, 0.82, 7, 0.92), linear_interpolation(num_subplots, 2, 0.025, 7, 0.1), linear_interpolation(num_subplots, 2, 0.035, 7, 0.01), linear_interpolation(num_subplots, 2, 0.765, 7, 0.6)] , anchor = 'E') 
     fig.colorbar(im, cax=ax1, ax=None, label = '$T_B$ ($10^9$ K)', ticklocation='right')

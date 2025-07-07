@@ -14,6 +14,7 @@ def create_parser():
     p = argparse.ArgumentParser()
     p.add_argument('-i', '--input', type=str, help='path of input original hdf5 file')
     p.add_argument('-o', '--output', type=str, help='path of output standard hdf5 file')
+    p.add_argument('-d', '--data', type=str, help='path of uvfits file')
     return p
 
 ######################################################################
@@ -22,8 +23,10 @@ args = create_parser().parse_args()
 npix   = 128
 fov    = 200 * eh.RADPERUAS
 ntimes = 100
-tstart = 10.91 
-tstop  = 14.01 
+
+obs = eh.obsdata.load_uvfits(args.data)
+tstart = 10.93 #12.63 #10.93 #obs.tstart
+tstop  = 14.00 #14.19 #14.00 #obs.tstop
 
 # tstart and tstop from obsfile of an example synthetic data
 #obs = eh.obsdata.load_uvfits('model1_Ma+0.94_w3_Rh160_i30_3601_LO_tint60_syserr2_deblurTrue_reftypequarter1.uvfits')

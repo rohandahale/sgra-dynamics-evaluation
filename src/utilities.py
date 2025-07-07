@@ -58,42 +58,42 @@ def common():
     
     colors = {
             'truth'    : 'black',
-            'kine'     : '#2ca02c',
-            'resolve'  : '#d62728',
-            'ehtim'    : '#8c564b',
-            'doghit'   : '#9467bd',
-            'ngmem'    : '#ff7f0e',
-            'modeling' : '#1f77b4' 
+            'kine'     : 'tab:blue',
+            'resolve'  : 'tab:orange',
+            'ehtim'    : 'tab:green',
+            'doghit'   : 'tab:red',
+            'ngmem'    : 'tab:purple',
+            'modeling' : 'tab:brown' 
         }
     
     titles = {  
             'truth'      : 'Truth',
-            'kine'       : 'method 1',
-            'resolve'    : 'method 2',
-            'ehtim'      : 'method 3',
-            'doghit'     : 'method 4',
-            'ngmem'      : 'method 5',
-            'modeling'   : 'method 6'
+            'kine'       : 'kine',
+            'resolve'    : 'resolve',
+            'ehtim'      : 'ehtim',
+            'doghit'     : 'doghit',
+            'ngmem'      : 'ngmem',
+            'modeling'   : 'modeling'
         }
     
     labels = {  
             'truth'      : 'Truth',
-            'kine'       : 'method 1',
-            'resolve'    : 'method 2',
-            'ehtim'      : 'method 3',
-            'doghit'     : 'method 4',
-            'ngmem'      : 'method 5',
-            'modeling'   : 'method 6'
+            'kine'       : 'kine',
+            'resolve'    : 'resolve',
+            'ehtim'      : 'ehtim',
+            'doghit'     : 'doghit',
+            'ngmem'      : 'ngmem',
+            'modeling'   : 'modeling'
         }
 
     mfcs = {
             'truth'    : 'none',
-            'kine'     : '#2ca02c',
-            'resolve'  : '#d62728',
-            'ehtim'    : '#8c564b',
-            'doghit'   : '#9467bd',
-            'ngmem'    : '#ff7f0e',
-            'modeling' : '#1f77b4' 
+            'kine'     : 'tab:blue',
+            'resolve'  : 'tab:orange',
+            'ehtim'    : 'tab:green',
+            'doghit'   : 'tab:red',
+            'ngmem'    : 'tab:purple',
+            'modeling' : 'tab:brown' 
         }
 
     mss = {
@@ -111,7 +111,7 @@ def common():
 def process_obs(obs,args,paths):
     obs.add_scans()
     obs = obs.avg_coherent(60)
-    obs = obs.flag_UT_range(UT_start_hour=10.89, UT_stop_hour=14.05, output='flagged')
+    #obs = obs.flag_UT_range(UT_start_hour=10.89, UT_stop_hour=14.05, output='flagged')
     obs.add_scans()
     obslist = obs.split_obs()
     times = []
@@ -250,7 +250,6 @@ def radial_homogeneity(u, v):
     uvdists.append(1e10)
     uvdists.append(0e10)
     uvdists = np.array(uvdists)
-
     score = jensen_shannon_distance(uvdists, [i*1.e10/len(uvdists) for i in range(len(uvdists))])
     
     return score
@@ -385,6 +384,43 @@ def process_obs_weights(obs,args,paths):
 ######################################################################
 # REx functions
 ######################################################################
+
+def calculate_true_d_error(D, W, D_err, W_err):
+    """
+    Calculates the propagated error for the quantity true_D.
+
+    Args:
+        D (float or np.ndarray): The measured value(s) of D.
+        W (float or np.ndarray): The measured value(s) of W.
+        D_err (float or np.ndarray): The error in the measurement(s) of D.
+        W_err (float or np.ndarray): The error in the measurement(s) of W.
+
+    Returns:
+        float or np.ndarray: The propagated error in true_D.
+    """
+    # For clarity, let's define some intermediate terms
+    ln2 = np.log(2)
+    ratio = W / D
+    ratio_sq = ratio**2
+    
+    # Common denominator term in the partial derivatives
+    common_denominator = (1 - (1 / (4 * ln2)) * ratio_sq)**2
+
+    # Partial derivative of true_D with respect to D
+    partial_d = (1 - (3 / (4 * ln2)) * ratio_sq) / common_denominator
+
+    # Partial derivative of true_D with respect to W
+    partial_w = ((1 / (2 * ln2)) * ratio) / common_denominator
+
+    # Calculate the squared error terms
+    d_err_term_sq = np.square(partial_d * D_err)
+    w_err_term_sq = np.square(partial_w * W_err)
+
+    # The final propagated error is the square root of the sum of squared terms
+    true_d_err = np.sqrt(d_err_term_sq + w_err_term_sq)
+
+    return true_d_err
+
 def extract_ring_quantites(image,xc=None,yc=None, rcutoff=5):
     Npa=360
     Nr=100
@@ -507,10 +543,13 @@ def extract_ring_quantites(image,xc=None,yc=None, rcutoff=5):
     hole_dflux  = hole_flux/Shole*(c**2/2/k_B/freq**2).to(u.K/u.Jansky).value
     outer_dflux = outer_flux/Souter*(c**2/2/k_B/freq**2).to(u.K/u.Jansky).value
     ring_dflux = ring_flux/Sring*(c**2/2/k_B/freq**2).to(u.K/u.Jansky).value
+    
+    true_D=np.array(D/(1-(1/(4*np.log(2)))*(W/D)**2))
+    true_Derr = calculate_true_d_error(D, W, Derr, Werr)
 
     # output dictionary
     outputs = dict(
-        time_utc = image.time,
+        time = image.time,
         radial_imarr=radial_imarr,
         peak_idx=peakpos,
         rpeak=radial[peakpos[0]],
@@ -528,6 +567,8 @@ def extract_ring_quantites(image,xc=None,yc=None, rcutoff=5):
         Derr = Derr,
         W = W,
         Werr = Werr,
+        true_D = true_D,
+        true_Derr = true_Derr,
         fwhm_maj=fwhm_maj,
         fwhm_min=fwhm_min,
         hole_flux = hole_flux,

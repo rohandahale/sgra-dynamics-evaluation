@@ -73,7 +73,7 @@ blur   = 0 * eh.RADPERUAS
 
 imlists = {}
 for p in paths.keys():
-    im = eh.image.load_fits(paths[p])
+    im = eh.image.load_fits(paths[p]).regrid_image(fov, npix)
     if p=='truth':
         if args.scat!='onsky':
             im = im.blur_circ(fwhm_i=15*eh.RADPERUAS, fwhm_pol=15*eh.RADPERUAS)
@@ -82,7 +82,7 @@ for p in paths.keys():
 def linear_interpolation(x, x1, y1, x2, y2):
     return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
 
-def static(ims, titles, paths, outpath='./', fov=None, interp='gaussian'):
+def static(ims, titles, paths, outpath='./', fov=None, interp='bicubic'):
     num_subplots=len(paths.keys())
     fig, ax = plt.subplots(nrows=1, ncols=len(paths.keys()), figsize=(linear_interpolation(num_subplots, 2, 8, 7, 16),linear_interpolation(num_subplots, 2, 4, 7, 3)))
    #fig.tight_layout()
@@ -104,12 +104,20 @@ def static(ims, titles, paths, outpath='./', fov=None, interp='gaussian'):
             polmovies[p]=ims[p]
                 
     for i, p in enumerate(ims.keys()):
-        ax[i].clear() 
-        TBfactor = 3.254e13/(ims[p].rf**2 * ims[p].psize**2)/1e9
-        im =ax[i].imshow(np.array(ims[p].imarr(pol='I'))*TBfactor, cmap='binary', interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
-        
-        ax[i].set_title(titles[p], fontsize=18)
-        ax[i].set_xticks([]), ax[i].set_yticks([])
+        if len(ims.keys())>1:
+            ax[i].clear() 
+            TBfactor = 3.254e13/(ims[p].rf**2 * ims[p].psize**2)/1e9
+            im =ax[i].imshow(np.array(ims[p].imarr(pol='I'))*TBfactor, cmap='binary', interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+
+            ax[i].set_title(titles[p], fontsize=18)
+            ax[i].set_xticks([]), ax[i].set_yticks([])
+        else:
+            ax.clear() 
+            TBfactor = 3.254e13/(ims[p].rf**2 * ims[p].psize**2)/1e9
+            im =ax.imshow(np.array(ims[p].imarr(pol='I'))*TBfactor, cmap='binary', interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+
+            ax.set_title(titles[p], fontsize=18)
+            ax.set_xticks([]), ax.set_yticks([])
         
         if p in polmovies.keys():
             self = polmovies[p]
@@ -146,15 +154,26 @@ def static(ims, titles, paths, outpath='./', fov=None, interp='gaussian'):
             
 
             cnorm=Normalize(vmin=0.0, vmax=0.5)
-            tickplot = ax[i].quiver(-x[::skip, ::skip],-y[::skip, ::skip],vx[::skip, ::skip],vy[::skip, ::skip],
-                           mfrac_m[::skip,::skip],
-                           headlength=0,
-                           headwidth = 1,
-                           pivot='mid',
-                           width=0.01,
-                           cmap='rainbow',
-                           norm=cnorm,
-                           scale=16)
+            if len(ims.keys())>1:
+                tickplot = ax[i].quiver(-x[::skip, ::skip],-y[::skip, ::skip],vx[::skip, ::skip],vy[::skip, ::skip],
+                               mfrac_m[::skip,::skip],
+                               headlength=0,
+                               headwidth = 1,
+                               pivot='mid',
+                               width=0.01,
+                               cmap='rainbow',
+                               norm=cnorm,
+                               scale=16)
+            else:
+                tickplot = ax.quiver(-x[::skip, ::skip],-y[::skip, ::skip],vx[::skip, ::skip],vy[::skip, ::skip],
+                               mfrac_m[::skip,::skip],
+                               headlength=0,
+                               headwidth = 1,
+                               pivot='mid',
+                               width=0.01,
+                               cmap='rainbow',
+                               norm=cnorm,
+                               scale=16)
         
         ax1 = fig.add_axes([linear_interpolation(num_subplots, 2, 0.82, 7, 0.92), linear_interpolation(num_subplots, 2, 0.025, 7, 0.1), linear_interpolation(num_subplots, 2, 0.035, 7, 0.01), linear_interpolation(num_subplots, 2, 0.765, 7, 0.6)] , anchor = 'E') 
         cbar = fig.colorbar(tickplot, cmap='rainbow', cax=ax1, pad=0.14,fraction=0.038, orientation="vertical", ticklocation='right') 

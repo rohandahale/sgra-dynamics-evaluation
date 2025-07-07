@@ -84,16 +84,23 @@ mean_dt=np.mean(np.array(dt))
 
 u_times=[]
 cmapsl = []
+tcolor=[]
 for i in range(len(times)-1):
     if times[i+1]-times[i] > mean_dt:
+        if i==0:
+            u_times.append(times[i+1]-1.1*mean_dt)
         j=0
         while u_times[len(u_times)-1] < times[i+1]-mean_dt:
+            if i==0:
+                del u_times[i]
             u_times.append(times[i]+j*mean_dt)
-            cmapsl.append('binary_usr')
+            cmapsl.append('afmhot_us')
+            tcolor.append('red')
             j=j+1
     else:
         u_times.append(times[i])
         cmapsl.append('afmhot_us')
+        tcolor.append('black')
 
 ######################################################################
 
@@ -115,7 +122,7 @@ def linear_interpolation(x, x1, y1, x2, y2):
     return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
 
 
-def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cmapsl, interp='gaussian', fps=20):
+def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cmapsl, tcolor=tcolor, interp='gaussian', fps=20):
     num_subplots=len(paths.keys())
     fig, ax = plt.subplots(nrows=1, ncols=len(paths.keys()), figsize=(linear_interpolation(num_subplots, 2, 8, 7, 16),linear_interpolation(num_subplots, 2, 4, 7, 3)))
     #fig.tight_layout()
@@ -133,18 +140,26 @@ def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cma
 
     def plot_frame(f):
         for i, p in enumerate(movieIs.keys()):
-            ax[i].clear() 
-            TBfactor = 3.254e13/(movieIs[p][f].rf**2 * movieIs[p][f].psize**2)/1e9
-            im =ax[i].imshow(np.array(movieIs[p][f].imarr(pol='I'))*TBfactor, cmap=cmaps[f], interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
-        
-            ax[i].set_title(titles[p], fontsize=18)
-            ax[i].set_xticks([]), ax[i].set_yticks([])
+            if len(movieIs.keys())>1:
+                ax[i].clear() 
+                TBfactor = 3.254e13/(movieIs[p][f].rf**2 * movieIs[p][f].psize**2)/1e9
+                im =ax[i].imshow(np.array(movieIs[p][f].imarr(pol='I'))*TBfactor, cmap=cmaps[f], interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+
+                ax[i].set_title(titles[p], fontsize=18)
+                ax[i].set_xticks([]), ax[i].set_yticks([])
+            else:
+                ax.clear() 
+                TBfactor = 3.254e13/(movieIs[p][f].rf**2 * movieIs[p][f].psize**2)/1e9
+                im =ax.imshow(np.array(movieIs[p][f].imarr(pol='I'))*TBfactor, cmap=cmaps[f], interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+
+                ax.set_title(titles[p], fontsize=18)
+                ax.set_xticks([]), ax.set_yticks([])
             
         if f==0:
             ax1 = fig.add_axes([linear_interpolation(num_subplots, 2, 0.82, 7, 0.92), linear_interpolation(num_subplots, 2, 0.025, 7, 0.1), linear_interpolation(num_subplots, 2, 0.035, 7, 0.01), linear_interpolation(num_subplots, 2, 0.765, 7, 0.6)] , anchor = 'E') 
             fig.colorbar(im, cax=ax1, ax=None, label = '$T_B$ ($10^9$ K)', ticklocation='right')
         
-        plt.suptitle(f"{u_times[f]:.2f} UT", y=0.95, fontsize=22)
+        plt.suptitle(f"{u_times[f]:.2f} UT", y=0.95, fontsize=22, color=tcolor[f])
 
         return fig
     
@@ -157,4 +172,4 @@ def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cma
     # Save gif
     ani.save(f'{outpath}.gif', writer=wri, dpi=100)
 
-writegif(imlistIs, titles, paths, outpath=outpath, fov=fov, times=u_times, cmaps=cmapsl)
+writegif(imlistIs, titles, paths, outpath=outpath, fov=fov, times=u_times, cmaps=cmapsl, tcolor=tcolor)

@@ -99,16 +99,23 @@ mean_dt=np.mean(np.array(dt))
 
 u_times=[]
 cmapsl = []
+tcolor = []
 for i in range(len(times)-1):
     if times[i+1]-times[i] > mean_dt:
+        if i==0:
+            u_times.append(times[i+1]-1.1*mean_dt)
         j=0
         while u_times[len(u_times)-1] < times[i+1]-mean_dt:
+            if i==0:
+                del u_times[i]
             u_times.append(times[i]+j*mean_dt)
-            cmapsl.append('RdGy')
+            cmapsl.append('bwr')
+            tcolor.append('red')
             j=j+1
     else:
         u_times.append(times[i])
         cmapsl.append('bwr')
+        tcolor.append('black')
 
 ######################################################################
 
@@ -118,20 +125,9 @@ for p in paths.keys():
     
     if 'truth' in paths.keys():
         movt = eh.movie.load_hdf5(paths['truth'])
-        
-        imlist = [mov.get_image(t) for t in times]
-        imlist_t = [movt.get_image(t) for t in times]
-        
-        imlist_aligned =[]
-        for im, imt in zip(imlist, imlist_t):
-            im = im.regrid_image(fov, npix)
-            imt = imt.regrid_image(fov, npix)
-            shift = imt.align_images([im])[1]
-            im = im.shift(shift[0])
-            imlist_aligned.append(im)
-            
-        mov = eh.movie.merge_im_list(imlist_aligned)
-        
+        mvtruth_image=movt.avg_frame().regrid_image(fov, npix)
+        shift = mvtruth_image.align_images([mov.avg_frame().regrid_image(fov, npix)])[1] #Shifts only from stokes I
+                    
     imlistI = []
     imlistarr=[]
     for t in u_times:
@@ -140,7 +136,8 @@ for p in paths.keys():
             if args.scat!='onsky':
                 im = im.blur_circ(fwhm_i=15*eh.RADPERUAS, fwhm_pol=15*eh.RADPERUAS).regrid_image(fov, npix)
         im = im.blur_circ(fwhm_i=blur, fwhm_pol=blur).regrid_image(fov, npix)
-        #im.ivec=im.ivec/im.total_flux()
+        if 'truth' in paths.keys():
+            im = im.shift(shift[0])  
         imlistI.append(im)
         imlistarr.append(im.imarr(pol='I'))
         
@@ -158,7 +155,7 @@ for p in paths.keys():
 def linear_interpolation(x, x1, y1, x2, y2):
     return y1 + (y2 - y1) * (x - x1) / (x2 - x1)
 
-def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cmapsl, interp='gaussian', fps=20):
+def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cmapsl, tcolor=tcolor, interp='bicubic', fps=20):
     num_subplots=len(paths.keys())
     fig, ax = plt.subplots(nrows=1, ncols=len(paths.keys()), figsize=(linear_interpolation(num_subplots, 2, 8, 7, 16),linear_interpolation(num_subplots, 2, 4, 7, 3)))
     #fig.tight_layout()
@@ -176,29 +173,35 @@ def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cma
 
     def plot_frame(f):
         for i, p in enumerate(movieIs.keys()):
-            ax[i].clear() 
-            TBfactor = 3.254e13/(movieIs[p][f].rf**2 * movieIs[p][f].psize**2)/1e9
-            im =ax[i].imshow(np.array(movieIs[p][f].imarr(pol='I'))*TBfactor, cmap=cmaps[f], interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
-            
-            if 'truth' in paths.keys():
-                # Compute NXCORR and SSIM value
-                image1 = np.array(movieIs['truth'][f].imarr(pol='I'))
-                image2 = np.array(movieIs[p][f].imarr(pol='I'))
-                #data_range = image1.max() - image1.min()
-                #ssim_value, _ = ssim(image1, image2, data_range=data_range, full=True)
-        
-                nxcorr_value = normalized_cross_correlation(image1, image2)
-                #ax[i].text(0.05, 0.95, f'SSIM: {ssim_value:.4f}', color='black', ha='left', va='top', transform=ax[i].transAxes)
-                ax[i].text(0.05, 0.95, f'nxcorr I: {nxcorr_value:.3f}', color='black', ha='left', va='top', transform=ax[i].transAxes)
-        
-            ax[i].set_title(titles[p], fontsize=18)
-            ax[i].set_xticks([]), ax[i].set_yticks([])
+            if len(movieIs.keys())>1:
+ 
+                ax[i].clear() 
+                TBfactor = 3.254e13/(movieIs[p][f].rf**2 * movieIs[p][f].psize**2)/1e9
+                im =ax[i].imshow(np.array(movieIs[p][f].imarr(pol='I'))*TBfactor, cmap=cmaps[f], interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+
+                #if 'truth' in paths.keys():
+                #    # Compute NXCORR and SSIM value
+                #    image1 = np.array(movieIs['truth'][f].imarr(pol='I'))
+                #    image2 = np.array(movieIs[p][f].imarr(pol='I'))
+                #    nxcorr_value = normalized_cross_correlation(image1, image2)
+                #    ax[i].text(0.05, 0.95, f'nxcorr I: {nxcorr_value:.3f}', color='black', ha='left', va='top', transform=ax[i].transAxes)
+
+                ax[i].set_title(titles[p], fontsize=18)
+                ax[i].set_xticks([]), ax[i].set_yticks([])
+            else:
+                ax.clear() 
+                TBfactor = 3.254e13/(movieIs[p][f].rf**2 * movieIs[p][f].psize**2)/1e9
+                im =ax.imshow(np.array(movieIs[p][f].imarr(pol='I'))*TBfactor, cmap=cmaps[f], interpolation=interp, vmin=vmin, vmax=vmax, extent=lims)
+                
+                ax.set_title(titles[p], fontsize=18)
+                ax.set_xticks([]), ax.set_yticks([])
+
             
         if f==0:
             ax1 = fig.add_axes([linear_interpolation(num_subplots, 2, 0.82, 7, 0.92), linear_interpolation(num_subplots, 2, 0.025, 7, 0.1), linear_interpolation(num_subplots, 2, 0.035, 7, 0.01), linear_interpolation(num_subplots, 2, 0.765, 7, 0.6)] , anchor = 'E') 
             fig.colorbar(im, cax=ax1, ax=None, label = '$T_B$ ($10^9$ K)', ticklocation='right')
         
-        plt.suptitle(f"{u_times[f]:.2f} UT", y=0.95, fontsize=22)
+        plt.suptitle(f"{u_times[f]:.2f} UT", y=0.95, fontsize=22, color=tcolor[f])
 
         return fig
     
@@ -211,4 +214,4 @@ def writegif(movieIs, titles, paths, outpath='./', fov=None, times=[], cmaps=cma
     # Save gif
     ani.save(f'{outpath}.gif', writer=wri, dpi=100)
 
-writegif(imlistIs, titles, paths, outpath=outpath, fov=fov, times=u_times, cmaps=cmapsl)
+writegif(imlistIs, titles, paths, outpath=outpath, fov=fov, times=u_times, cmaps=cmapsl, tcolor=tcolor)

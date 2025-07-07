@@ -25,10 +25,10 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
     fulldatalist=sorted(glob.glob(subdir+'*.uvfits'))
     for d in fulldatalist:
         obs = eh.obsdata.load_uvfits(d)
-        if obs.tstart<10.85 or obs.tstop>14.05:
-            obs = obs.flag_UT_range(UT_start_hour=10.85, UT_stop_hour=14.05, output='flagged')
-            obs.tstart, obs.tstop = obs.data['time'][0], obs.data['time'][-1]
-            obs.save_uvfits(d)
+        #if obs.tstart<10.85 or obs.tstop>14.05:
+        #    obs = obs.flag_UT_range(UT_start_hour=10.85, UT_stop_hour=14.05, output='flagged')
+        #    obs.tstart, obs.tstop = obs.data['time'][0], obs.data['time'][-1]
+        #    obs.save_uvfits(d)
     
     # Find LO band data for all models
     datalist=[]
@@ -43,10 +43,11 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
         
         model = dataf.split('_')[0]
         band =  dataf.split('_')[1]
-        scat = dataf.split('_')[2][:-7]
-        
+        scat = dataf.split('_')[2][:-7]#[2]
+                
         # Sort reconstructions by pipeline
-        movielist = sorted(glob.glob(subdir+f'{model}_*_{scat}_*.hdf5'))
+        #movielist = sorted(glob.glob(subdir+f'{model}_*_{scat}_*.hdf5'))
+        movielist = sorted(glob.glob(subdir+f'{model}_*.hdf5'))
         resolve=[]
         kine=[]
         ehtim=[]
@@ -118,6 +119,11 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
             vida_modelname_dynamic = 'gaussian'
             vida_modelname = 'crescent'
             modeltype      = 'ring'
+        elif dataf.find('grmhd2+hs')!=-1:
+            hotspot        = True
+            vida_modelname_dynamic = 'gaussian'
+            vida_modelname = 'crescent'
+            modeltype      = 'ring'
         else:
             vida_modelname = 'crescent'
             modeltype      = 'ring'
@@ -152,7 +158,7 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
         print('')
         print(f'Data:  {datap}')
         print(f'Scattering Type:  {scat}')
-
+        
         if modelname!='sgra':
             try:
                 truthmv = mvsort['truth'][model]
@@ -210,15 +216,15 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
         paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
         data=datap
 
-        pollist=['I', 'Q', 'U']
-        for pol in pollist:
-            #########################
-            #CHISQ
-            #########################
-            if eval_chisq:
-                outpath=f'{resultsdir}/{model}_{band}_{scat}_chisq_{pol}'
-                if not os.path.exists(outpath+'.png'):
-                    os.system(f'python {codedir}/chisq.py -d {data} {paths} -o {outpath} --pol {pol} --scat {scat}')
+        #pollist=['I', 'Q', 'U']
+        #for pol in pollist:
+        #########################
+        #CHISQ
+        #########################
+        if eval_chisq:
+            outpath=f'{resultsdir}/{model}_{band}_{scat}_chisq'
+            if not os.path.exists(outpath+'.png'):
+                os.system(f'python {codedir}/chisq.py -d {data} {paths} -o {outpath} --scat {scat}')
 
             #########################
             # CPHASE
@@ -265,33 +271,52 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
             else:
                 paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
                 os.system(f'python {codedir}/dynamic.py --data {data} {paths} -o {outpath} --scat {scat}')
+                
+        ##############################################################################################
+        # Regrid Full Movie
+        ##############################################################################################
+        outpath =f'{resultsdir}/static+dynamic/'
+        if not os.path.exists(f'{outpath}'):
+            os.makedirs(f'{outpath}')
 
+        if not os.path.exists(f'{resultsdir}/static+dynamic/{os.path.basename(kinemv)}'):
+            if modelname!='sgra':
+                paths=f'--truthmv {truthmv} --kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                os.system(f'python {codedir}/regrid.py --data {data} {paths} -o {outpath} --scat {scat}')
+            else:
+                paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                os.system(f'python {codedir}/regrid.py --data {data} {paths} -o {outpath} --scat {scat}')
+                
         ##############################################################################################
         # NXCORR
         ##############################################################################################
         if eval_nxcorr:
             if modelname!='sgra':
                 paths=f'--truthmv {truthmv} --kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
-                outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr'
-                if not os.path.exists(outpath+'.png'):
-                    os.system(f'python {codedir}/nxcorr.py --data {data} {paths} -o {outpath} --scat {scat}')
+                #outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_threshold'
+                #if not os.path.exists(outpath+'.png'):
+                #    os.system(f'python {codedir}/nxcorr_threshold.py --data {data} {paths} -o {outpath} --scat {scat}')
 
-                outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_static'
-                if not os.path.exists(outpath+'.png'):
-                    os.system(f'python {codedir}/nxcorr_static.py --data {data} {paths} -o {outpath} --scat {scat}')
+                #outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_static'
+                #if not os.path.exists(outpath+'.png'):
+                #    os.system(f'python {codedir}/nxcorr_static.py --data {data} {paths} -o {outpath} --scat {scat}')
 
-                outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_dynamic'
+                #outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_dynamic'
+                #if not os.path.exists(outpath+'.png'):
+                    #os.system(f'python {codedir}/nxcorr_dynamic.py --data {data} {paths} -o {outpath} --scat {scat}')
+                    
+                outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_threshold'
                 if not os.path.exists(outpath+'.png'):
-                    os.system(f'python {codedir}/nxcorr_dynamic.py --data {data} {paths} -o {outpath} --scat {scat}')
+                    os.system(f'python {codedir}/nxcorr_threshold.py --data {data} {paths} -o {outpath} --scat {scat}')
         
                 outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_static_threshold'
                 if not os.path.exists(outpath+'.png'):
                     os.system(f'python {codedir}/nxcorr_static_threshold.py --data {data} {paths} -o {outpath} --scat {scat}')
-
+                
                 outpath =f'{resultsdir}/{model}_{band}_{scat}_nxcorr_dynamic_threshold'
                 if not os.path.exists(outpath+'.png'):
                     os.system(f'python {codedir}/nxcorr_dynamic_threshold.py --data {data} {paths} -o {outpath} --scat {scat}')
-                    
+                                    
                 #outpath =f'{resultsdir}/{model}_{band}_{scat}_rssd'
                 #if not os.path.exists(outpath+'.png'):
                 #    os.system(f'python {codedir}/rssd.py --data {data} {paths} -o {outpath} --scat {scat}')
@@ -319,6 +344,7 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
         ##############################################################################################      
         # Stokes I GIF
         ##############################################################################################
+        
         if plot_gifs:
             outpath =f'{resultsdir}/{model}_{band}_{scat}_gif'
             if not os.path.exists(outpath+'.gif'):
@@ -327,8 +353,9 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                     os.system(f'python {codedir}/gif.py --data {data} {paths} -o {outpath} --scat {scat}')
                 else:
                     paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                    #paths=f'--kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                     os.system(f'python {codedir}/gif.py --data {data} {paths} -o {outpath} --scat {scat}')
-
+        
         ##############################################################################################      
         # Stokes I, P Dynamic Component GIF
         ##############################################################################################
@@ -340,7 +367,9 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                     os.system(f'python {codedir}/gif_dynamic.py --data {data} {paths} -o {outpath} --scat {scat}')
                 else:
                     paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                    #paths=f'--kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                     os.system(f'python {codedir}/gif_dynamic.py --data {data} {paths} -o {outpath} --scat {scat}')
+                    
 
             outpath =f'{resultsdir}/{model}_{band}_{scat}_dynamic_lp_gif'
             if not os.path.exists(outpath+'.gif'):
@@ -349,8 +378,9 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                     os.system(f'python {codedir}/gif_dynamic_lp.py --data {data} {paths} -o {outpath} --scat {scat}')
                 else:
                     paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                    #paths=f'--kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                     os.system(f'python {codedir}/gif_dynamic_lp.py --data {data} {paths} -o {outpath} --scat {scat}')
-
+    
         ##############################################################################################      
         # Stokes I, P Static Component Plot
         ##############################################################################################
@@ -409,6 +439,7 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                     os.system(f'python {codedir}/gif_lp.py --data {data} {paths} -o {outpath} --scat {scat}')
                 else:
                     paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                    #paths=f'--kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                     os.system(f'python {codedir}/gif_lp.py --data {data} {paths} -o {outpath} --scat {scat}')
 
         ##############################################################################################      
@@ -437,7 +468,6 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                     paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
                     os.system(f'python {codedir}/vis_variance.py --data {data} {paths} -o {outpath} --scat {scat}')
 
-
         ##############################################################################################
         # REx, VIDA ring characterization
         ##############################################################################################  
@@ -457,10 +487,36 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                 if not os.path.exists(outpath):
                     if modelname!='sgra':
                         paths=f'--truthmv {truthmv} --kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                        #paths=f'--truthmv {truthmv} --kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                         os.system(f'python {codedir}/vida_pol.py --data {data} {paths} -o {outpath} -c {cores} --scat {scat}')
+                        
+                        truthcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_truth.csv'
+                        kinecsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_kine.csv'
+                        rescsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_resolve.csv'
+                        ehtcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_ehtim.csv'
+                        dogcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_doghit.csv'
+                        ngcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_ngmem.csv'
+                        modelingcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_modeling.csv'
+                        
+                        paths=f'--truthcsv {truthcsv} --kinecsv {kinecsv} --rescsv {rescsv} --dogcsv {dogcsv} --ngcsv {ngcsv} --rescsv {rescsv} --ehtcsv {ehtcsv} --modelingcsv {modelingcsv}'
+                        outpath =f'{resultsdir}/{model}_{band}_{scat}_vida_pol_all'
+                        os.system(f'python {codedir}/merge_csv_vida_pol.py {paths} -o {outpath}')
+                        
                     else:
                         paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                        #paths=f'--kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                         os.system(f'python {codedir}/vida_pol.py --data {data} {paths} -o {outpath} -c {cores} --scat {scat}')
+                        
+                        kinecsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_kine.csv'
+                        rescsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_resolve.csv'
+                        ehtcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_ehtim.csv'
+                        dogcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_doghit.csv'
+                        ngcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_ngmem.csv'
+                        modelingcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_pol_modeling.csv'
+                        
+                        paths=f'--kinecsv {kinecsv} --rescsv {rescsv} --dogcsv {dogcsv} --ngcsv {ngcsv} --rescsv {rescsv} --ehtcsv {ehtcsv} --modelingcsv {modelingcsv}'
+                        outpath =f'{resultsdir}/{model}_{band}_{scat}_vida_pol_all'
+                        os.system(f'python {codedir}/merge_csv_vida_pol.py {paths} -o {outpath}')
 
         ##############################################################################################
         # VIDA
@@ -470,11 +526,37 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
             if not os.path.exists(outpath):
                 if modelname!='sgra':
                     paths=f'--truthmv {truthmv} --kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                    #paths=f'--truthmv {truthmv} --kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                     os.system(f'python {codedir}/vida.py --data {data} --model {vida_modelname} --template {template} {paths} -o {outpath} -c {cores} --scat {scat}')
+                    
+                    truthcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_truth.csv'
+                    kinecsv = f'{resultsdir}/{model}_{band}_{scat}_vida_kine.csv'
+                    rescsv = f'{resultsdir}/{model}_{band}_{scat}_vida_resolve.csv'
+                    ehtcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_ehtim.csv'
+                    dogcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_doghit.csv'
+                    ngcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_ngmem.csv'
+                    modelingcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_modeling.csv'
+                        
+                    paths=f'--truthcsv {truthcsv} --kinecsv {kinecsv} --rescsv {rescsv} --dogcsv {dogcsv} --ngcsv {ngcsv} --rescsv {rescsv} --ehtcsv {ehtcsv} --modelingcsv {modelingcsv}'
+                    outpath =f'{resultsdir}/{model}_{band}_{scat}_vida_all'
+                    os.system(f'python {codedir}/merge_csv_vida.py {paths} -o {outpath}')
+                        
                 else:
                     paths=f'--kinemv {kinemv} --dogmv {dogmv} --ngmv {ngmv} --resmv {resmv} --ehtmv {ehtmv} --modelingmv {modelingmv}'
+                    #paths=f'--kinemv {kinemv} --resmv {resmv} --modelingmv {modelingmv}'
                     os.system(f'python {codedir}/vida.py --data {data} --model {vida_modelname} --template {template} {paths} -o {outpath} -c {cores} --scat {scat}')
-
+                    
+                    kinecsv = f'{resultsdir}/{model}_{band}_{scat}_vida_kine.csv'
+                    rescsv = f'{resultsdir}/{model}_{band}_{scat}_vida_resolve.csv'
+                    ehtcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_ehtim.csv'
+                    dogcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_doghit.csv'
+                    ngcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_ngmem.csv'
+                    modelingcsv = f'{resultsdir}/{model}_{band}_{scat}_vida_modeling.csv'
+                        
+                    paths=f'--kinecsv {kinecsv} --rescsv {rescsv} --dogcsv {dogcsv} --ngcsv {ngcsv} --rescsv {rescsv} --ehtcsv {ehtcsv} --modelingcsv {modelingcsv}'
+                    outpath =f'{resultsdir}/{model}_{band}_{scat}_vida_all'
+                    os.system(f'python {codedir}/merge_csv_vida.py {paths} -o {outpath}')
+                    
         ##############################################################################################
         # Interpolated Movie, Averaged Movie, VIDA Ring, Cylinder
         ##############################################################################################
@@ -513,29 +595,30 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                     # Interpolated Movies
                     input= plist[i]
                     output=f'{resultsdir}/patternspeed/{os.path.basename(plist[i])}'
-                    os.system(f'python {codedir}/hdf5_standardize.py -i {input} -o {output}')
+                    os.system(f'python {codedir}/hdf5_standardize.py -i {input} -o {output} -d {data}')
                     #Average Movies
-                    input=f'{resultsdir}/patternspeed/{os.path.basename(plist[i])}'
-                    fits=os.path.basename(plist[i])[:-5]+'.fits'
-                    output=f'{resultsdir}/patternspeed/{fits}'
-                    if nlist[i]=='truth':
-                        os.system(f'python {codedir}/avg_frame.py -i {input} -o {output} --truth --scat {scat}')
-                    else:
-                        os.system(f'python {codedir}/avg_frame.py -i {input} -o {output} --scat {scat}')
+                    #input=f'{resultsdir}/patternspeed/{os.path.basename(plist[i])}'
+                    #fits=os.path.basename(plist[i])[:-5]+'.fits'
+                    #output=f'{resultsdir}/patternspeed/{fits}'
+                    #if nlist[i]=='truth':
+                    #    os.system(f'python {codedir}/avg_frame.py -i {input} -o {output} --truth --scat {scat}')
+                    #else:
+                    #    os.system(f'python {codedir}/avg_frame.py -i {input} -o {output} --scat {scat}')
                     # VIDA Ring
                     fits=os.path.basename(plist[i])[:-5]+'.fits'
                     path=f'{resultsdir}/patternspeed/{fits}'
                     outpath = path[:-5]+'.csv'
-                    if not os.path.exists(outpath):    
-                        os.system(f'julia {codedir}/ring_extractor.jl --in {path} --out {outpath}')
-                        print(f'{os.path.basename(outpath)} created!')
+                    #if not os.path.exists(outpath):    
+                    #    os.system(f'julia {codedir}/ring_extractor.jl --in {path} --out {outpath}')
+                    #    print(f'{os.path.basename(outpath)} created!')
                     # Cylinder
                     ipathmov=f'{resultsdir}/patternspeed/{os.path.basename(plist[i])}'
-                    ringpath = ipathmov[:-5]+'.csv'
+                    #ringpath = ipathmov[:-5]+'.csv'
                     outpath  = ipathmov[:-5]
-                    os.system(f'python {codedir}/cylinder.py {ipathmov} {ringpath} {outpath}')
-
-
+                    #os.system(f'python {codedir}/cylinder.py {ipathmov} {ringpath} {outpath}')
+                    os.system(f'python {codedir}/cylinder.py {ipathmov} {outpath}')
+                    #os.system(f'python {codedir}/cylinder_xi_crit_optimization_clean.py {ipathmov} {outpath}')
+                    
         if hotspot:          
             ##############################################################################################
             # VIDA Dynamic Component
@@ -548,6 +631,7 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                 if not os.path.isfile(truthmvd):
                     truthmvd='none'
                 kinemvd=os.path.dirname(kinemv).replace(os.path.basename(os.path.normpath(subdir)), os.path.basename(os.path.normpath(resultsdir)))+  '/dynamic/' + os.path.basename(kinemv)
+                print(kinemvd)
                 if not os.path.isfile(kinemvd):
                     kinemvd='none'
                 dogmvd=os.path.dirname(dogmv).replace(os.path.basename(os.path.normpath(subdir)), os.path.basename(os.path.normpath(resultsdir)))+  '/dynamic/' + os.path.basename(dogmv)
@@ -571,9 +655,35 @@ def evaluation(subdir='./submissions/', resultsdir='./results/', eval_chisq=True
                 if not os.path.exists(outpath):
                     if modelname!='sgra':
                         paths=f'--truthmv {truthmvd} --kinemv {kinemvd} --dogmv {dogmvd} --ngmv {ngmvd} --resmv {resmvd} --ehtmv {ehtmvd} --modelingmv {modelingmvd}'
+                        #paths=f'--truthmv {truthmvd} --kinemv {kinemvd} --resmv {resmvd} --modelingmv {modelingmvd}'
                         os.system(f'python {codedir}/vida.py --data {data} --model {vida_modelname_dynamic} --template {template} {paths} -o {outpath} -c {cores} --scat {scat}')
+                        
+                        truthcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_truth.csv'
+                        kinecsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_kine.csv'
+                        rescsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_resolve.csv'
+                        ehtcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_ehtim.csv'
+                        dogcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_doghit.csv'
+                        ngcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_ngmem.csv'
+                        modelingcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_modeling.csv'
+                        
+                        paths=f'--truthcsv {truthcsv} --kinecsv {kinecsv} --rescsv {rescsv} --dogcsv {dogcsv} --ngcsv {ngcsv} --rescsv {rescsv} --ehtcsv {ehtcsv} --modelingcsv {modelingcsv}'
+                        outpath =f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_all'
+                        os.system(f'python {codedir}/merge_csv_vida.py {paths} -o {outpath}')
+                    
                     else:
                         paths=f'--kinemv {kinemvd} --dogmv {dogmvd} --ngmv {ngmvd} --resmv {resmvd} --ehtmv {ehtmvd} --modelingmv {modelingmvd}'
+                        #paths=f'--kinemv {kinemvd} --resmv {resmvd} --modelingmv {modelingmvd}'
                         os.system(f'python {codedir}/vida.py --data {data} --model {vida_modelname_dynamic} {paths} --template {template} -o {outpath} -c {cores} --scat {scat}')
+                        
+                        kinecsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_kine.csv'
+                        rescsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_resolve.csv'
+                        ehtcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_ehtim.csv'
+                        dogcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_doghit.csv'
+                        ngcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_ngmem.csv'
+                        modelingcsv = f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_modeling.csv'
+                        
+                        paths=f'--kinecsv {kinecsv} --rescsv {rescsv} --dogcsv {dogcsv} --ngcsv {ngcsv} --rescsv {rescsv} --ehtcsv {ehtcsv} --modelingcsv {modelingcsv}'
+                        outpath =f'{resultsdir}/{model}_{band}_{scat}_dynamic_vida_all'
+                        os.system(f'python {codedir}/merge_csv_vida.py {paths} -o {outpath}')
 
     

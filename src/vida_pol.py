@@ -73,7 +73,7 @@ obs = eh.obsdata.load_uvfits(args.data)
 obs, obs_t, obslist_t, splitObs, times, I, snr, w_norm = process_obs_weights(obs, args, paths)
 
 ######################################################################
-
+#for p in paths.keys():
 for p in paths.keys():
     outpath_csv= outpath[:-4]+f'_{p}.csv'
     if not os.path.exists(outpath_csv):
@@ -109,8 +109,13 @@ ax[0,1].set_ylabel('$ \\langle |m| \\rangle$')
 
 ax[1,0].set_ylabel('$|\\beta_{LP,2}|$')
 ax[1,1].set_ylabel('$\\angle \\beta_{LP,2}$')
-ax[1,1].set_ylim(0,360)
-ax[1,1].set_yticks([0,90,180,270,360])
+#ax[1,1].set_ylim(0,360)
+ax[1,1].set_ylim(-180,180)
+ax[1,1].set_yticks([-180, -90, 0 , 90, 180])
+#ax[1,1].set_yticks([90,135,180])
+
+
+
 #ax[1,2].set_ylabel('$|\\beta_{CP,1}|$')
 #ax[1,3].set_ylabel('$ \\angle \\beta_{CP,1}$')
 #ax[1,3].set_ylim(0,360)
@@ -126,6 +131,9 @@ m_net_dict={}
 m_avg_dict={}
 ang_betalp_2_dict={}
 ang_betacp_1_dict={}
+
+percent_argbeta2 = {}
+argbeta2_threshold = 26
 
 for p in paths.keys():
     s[p]  = outpath[:-4]+f'_{p}.csv'
@@ -148,8 +156,8 @@ for p in paths.keys():
     mod_betacp_1 = np.abs(betacp_1)
     ang_betacp_1 = np.rad2deg(np.angle(betacp_1))
             
-    ang_betacp_1 = ang_betacp_1%360
-    ang_betalp_2 = ang_betalp_2%360
+    ang_betacp_1 = ang_betacp_1#%360
+    ang_betalp_2 = ang_betalp_2#%360
 
     mc=colors[p]
     alpha=1.0
@@ -168,60 +176,52 @@ for p in paths.keys():
     #if np.sum(mod_betacp_1)!=0:
     #    ax[1,2].plot(times, mod_betacp_1,  marker ='o', mfc=mfc, mec=mc, ms=ms, ls='-', lw=1,  color=lc, alpha=alpha)
     #    ax[1,3].plot(times, ang_betacp_1,  marker ='o', mfc=mfc, mec=mc, ms=ms, ls='-', lw=1,  color=lc, alpha=alpha)
+    
+    if 'truth' in paths.keys():
+        if p == 'truth':
+            ax[1,1].fill_between(times, ang_betalp_2 - argbeta2_threshold, ang_betalp_2 + argbeta2_threshold, color='black', alpha=0.3)
+            truth_argbeta_2 =  ang_betalp_2
+        if p != 'truth':
+            within_argbeta_2 = (ang_betalp_2 >= truth_argbeta_2 - argbeta2_threshold) & (ang_betalp_2 <= truth_argbeta_2 + argbeta2_threshold)
+            percentage = np.sum(within_argbeta_2) / len(ang_betalp_2) * 100
+            percent_argbeta2[p] = percentage
 
     m_net_dict[p] = m_net
     m_avg_dict[p] = m_avg
     ang_betalp_2_dict[p] = ang_betalp_2
     #ang_betacp_1_dict[p] = ang_betacp_1
 
-if args.truthmv!='none':
-    score={}
-    for p in paths.keys():
-        if p!='truth':
-            score[p]=np.zeros(3)
+    print(p, 'mavg', np.mean(m_avg), 'argbeta2', np.mean(ang_betalp_2))
     
-    row_labels = ['$|m|_{net}$', '$ \\langle |m| \\rangle$', '$ \\angle \\beta_{LP,2}$']
-    table_vals = pd.DataFrame(data=score, index=row_labels)
+if 'truth' in paths.keys():
+    methods = [key for key in percent_argbeta2.keys()]
+    categories = ['argbeta2 (%)']
+
+    table_data = [
+            [f"{percent_argbeta2[m]:.2f}" for m in methods]
+        ]
     
-    for p in paths.keys():
-        if p!='truth':
-            if np.sum(m_net_dict[p])!=0:
-                signal1 = m_net_dict['truth']
-                signal2 = m_net_dict[p]
-                table_vals[p][row_labels[0]] = normalized_rmse(signal1, signal2, w_norm['I'])
-    
-                signal1 = m_avg_dict['truth']
-                signal2 = m_avg_dict[p]
-                table_vals[p][row_labels[1]] = normalized_rmse(signal1, signal2, w_norm['I'])
-    
-                signal1 = ang_betalp_2_dict['truth']
-                signal2 = ang_betalp_2_dict[p]
-                table_vals[p][row_labels[2]] = normalized_rmse(signal1, signal2, w_norm['I'])
-    
-                #signal1 = ang_betacp_1_dict['truth']
-                #signal2 = ang_betacp_1_dict[p]
-                #table_vals[p][row_labels[3]] = normalized_rmse(signal1, signal2, w_norm['I'])
-    
-    
-    table_vals.replace(0.00, '-', inplace=True)
-    
-    col_labels=[]
-    for p in table_vals.keys():
-        col_labels.append(titles[p])
-    
-    table = ax[0,1].table(cellText=table_vals.values,
-                        rowLabels=table_vals.index,
-                        colLabels=col_labels,#table_vals.columns,
-                        cellLoc='center',
-                        loc='bottom',
-                        bbox=[-1.1, -2.2, 2.5, 0.5])
+    for p in methods:
+        outpath_csv= outpath[:-4]+f'_{p}.csv'
+        if os.path.exists(outpath_csv):
+            df = pd.read_csv(outpath_csv)
+            df['pass_percent_argbeta2'] = percent_argbeta2[p]
+            df.to_csv(outpath_csv, index=False)
+        
+    # Add table
+    table = ax[0,0].table(
+            cellText=table_data,
+            rowLabels=categories,
+            colLabels=methods,
+            loc='bottom',
+            cellLoc="center",
+            bbox=[0.25, -2, 0.8, 0.5]
+        )
+    # Style the table
     table.auto_set_font_size(False)
     table.set_fontsize(18)
-    for c in table.get_children():
-        c.set_edgecolor('none')
-        c.set_text_props(color='black')
-        c.set_facecolor('none')
-        c.set_edgecolor('black')
+    table.auto_set_column_width(col=list(range(len(methods) + 1)))
+    
     
 ax[0,0].legend(ncols=len(paths.keys()), loc='best',  bbox_to_anchor=(2.5, 1.35), markerscale=2)
 plt.savefig(outpath, bbox_inches='tight', dpi=300)

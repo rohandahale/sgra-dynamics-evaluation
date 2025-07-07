@@ -87,3 +87,13 @@ ax[1].set_title('Weights: Istropy Metric x SNR', fontsize=22)
 
 ax[0].legend(loc='best')
 plt.savefig(args.outpath+'.png', bbox_inches='tight', dpi=300)
+
+df = pd.DataFrame({"time": times, 
+                   "weighs_I" :  w_norm['I'], 
+                   "weights_Q" :  w_norm['Q'], 
+                   "weights_U" :  w_norm['U'],
+                   "isotropy_metric" : I,
+                   "snr_I" : snr['I'],
+                   "snr_Q" : snr['Q'],
+                   "snr_U" : snr['U']})
+df.to_csv(args.outpath+'.csv', index=False)

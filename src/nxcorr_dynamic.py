@@ -100,12 +100,12 @@ ax[1].set_ylim(0,7)
 ax[2].set_ylim(0,7)
 #ax[3].set_ylim(0,7)
 
-fig2, ax2 = plt.subplots(nrows=2, ncols=3, figsize=(21,6))
-for i in range(3):
-    ax2[0,i].set_ylabel('shift (x)')
-    ax2[1,i].set_ylabel('shift (y)')
-    ax2[0,i].set_xlabel('Time (UTC)')
-    ax2[1,i].set_xlabel('Time (UTC)')
+#fig2, ax2 = plt.subplots(nrows=2, ncols=3, figsize=(21,6))
+#for i in range(3):
+#    ax2[0,i].set_ylabel('shift (x)')
+#    ax2[1,i].set_ylabel('shift (y)')
+#    ax2[0,i].set_xlabel('Time (UTC)')
+#    ax2[1,i].set_xlabel('Time (UTC)')
 
 mvt=eh.movie.load_hdf5(pathmovt)
 if args.scat!='onsky':
@@ -205,9 +205,9 @@ for pol in pollist:
             shift_list_x.append(x)
             shift_list_y.append(y)
             imlist_aligned.append(im)
-            if n==0:
-                if pol=='I': im.display(export_pdf=args.outpath+'_'+pol+'_'+str(p)+'.png', label_type='scale', has_title=False, has_cbar=False)
-            n=n+1
+            #if n==0:
+                #if pol=='I': im.display(export_pdf=args.outpath+'_'+pol+'_'+str(p)+'.png', label_type='scale', has_title=False, has_cbar=False)
+            #n=n+1
             imlistarr.append(im.imarr(pol=pol))
         shifts_x[pol][p]=shift_list_x
         shifts_y[pol][p]=shift_list_y
@@ -277,11 +277,11 @@ for pol in pollist:
         else:
             ax[k].plot(times, nxcorr_t,  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha)  
     
-        ax[k].hlines(s+1, xmin=10.5, xmax=14.5, color=colors[p], ls='--', lw=1.5, zorder=0)
+        ax[k].hlines(s+1, xmin=times[0], xmax=times[-1], color=colors[p], ls='--', lw=1.5, zorder=0)
         ax[k].yaxis.set_ticklabels([])
         
-        ax2[0,k].plot(times, shifts_x[pol][p],  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha, label=labels[p])
-        ax2[1,k].plot(times, shifts_y[pol][p],  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha, label=labels[p])
+        #ax2[0,k].plot(times, shifts_x[pol][p],  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha, label=labels[p])
+        #ax2[1,k].plot(times, shifts_y[pol][p],  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha, label=labels[p])
         s=s+1
     
     k=k+1
@@ -310,10 +310,10 @@ for c in table.get_children():
     c.set_facecolor('none')
     c.set_edgecolor('black')
 ax[0].legend(ncols=len(paths.keys()), loc='best',  bbox_to_anchor=(3.5, 1.2), markerscale=5.0)
-ax2[0,0].legend(ncols=len(paths.keys()), loc='best', markerscale=5.0)
-ax2[0,0].set_title('I')
-ax2[0,1].set_title('Q')
-ax2[0,2].set_title('U')
+#ax2[0,0].legend(ncols=len(paths.keys()), loc='best', markerscale=5.0)
+#ax2[0,0].set_title('I')
+#ax2[0,1].set_title('Q')
+#ax2[0,2].set_title('U')
 #ax2[0,3].set_title('V')
 fig.savefig(args.outpath+'.png', bbox_inches='tight', dpi=300)
 fig2.savefig(args.outpath+'_shifts.png', bbox_inches='tight', dpi=300)
