@@ -1,220 +1,282 @@
 ######################################################################
-# Author: Rohan Dahale, Date: 12 July 2024
+# Author: Rohan Dahale, Date: 10 December 2025
+# Discussions with: Kotaro Moriyama
 ######################################################################
 
-# Import libraries
+import os
+import sys
+import warnings
+
+# Suppress all warnings
+warnings.filterwarnings('ignore')
+
+# Set environment variables to single-threaded before importing numpy/scipy/ehtim
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import numpy as np
 import pandas as pd
 import ehtim as eh
-import ehtim.scattering.stochastic_optics as so
-from preimcal import *
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import pdb
 import argparse
-import os
+from concurrent.futures import ProcessPoolExecutor
+import functools
 import glob
-from utilities import *
-colors, titles, labels, mfcs, mss = common()
+from tqdm import tqdm
+from contextlib import redirect_stdout, redirect_stderr
 
-# Parsing arguments function
+# Set plot style
+plt.rcParams["xtick.direction"] = "out"
+plt.rcParams["ytick.direction"] = "out"
+plt.rcParams["font.family"] = "sans-serif"
+
 def create_parser():
     p = argparse.ArgumentParser()
-    p.add_argument('-d', '--data', type=str, 
-                   default='hops_3601_SGRA_LO_netcal_LMTcal_10s_ALMArot_dcal.uvfits', 
-                   help='string of uvfits to data to compute chi2')
-    p.add_argument('--kinemv', type=str, default='none', help='path of kine .hdf5')
-    p.add_argument('--ehtmv',  type=str, default='none', help='path of ehtim .hdf5')
-    p.add_argument('--dogmv',  type=str, default='none', help='path of doghit .hdf5')
-    p.add_argument('--ngmv',   type=str, default='none', help='path of ngmem .hdf5')
-    p.add_argument('--resmv',  type=str, default='none',help='path of resolve .hdf5')
-    p.add_argument('--modelingmv',  type=str, default='none', help='path of modeling .hdf5')
-    p.add_argument('-o', '--outpath', type=str, default='./chi2.png', 
-                   help='name of output file with path')
-    #p.add_argument('--pol',  type=str, default='I',help='I,Q,U,V')
-    p.add_argument('--scat', type=str, default='none', help='onsky, deblur, dsct, none')
-
+    p.add_argument('-d', '--data', type=str, required=True, help='UVFITS data file')
+    p.add_argument('--input', type=str, nargs='+', required=True, help='Glob pattern(s) or list of HDF5 model files (e.g., "path/*.h5")')
+    p.add_argument('-o', '--outpath', type=str, default='./chi2', help='Output prefix (without extension)')
+    p.add_argument('-n', '--ncores', type=int, default=32, help='Number of cores to use for parallel processing')
     return p
-######################################################################
-# List of parsed arguments
-args = create_parser().parse_args()
-outpath = args.outpath
-#pol = args.pol
 
-paths={}
+def process_movie(m_path, obslist_t, times):
+    """
+    Process a single movie file to calculate chi-squared metrics.
+    """
+    with open(os.devnull, 'w') as devnull:
+        with redirect_stdout(devnull), redirect_stderr(devnull):
+            mv = eh.movie.load_hdf5(m_path)
 
-if args.kinemv!='none':
-    paths['kine']=args.kinemv
-if args.resmv!='none':
-    paths['resolve']=args.resmv
-if args.ehtmv!='none':
-    paths['ehtim']=args.ehtmv
-if args.dogmv!='none':
-    paths['doghit']=args.dogmv 
-if args.ngmv!='none':
-    paths['ngmem']=args.ngmv
-if args.modelingmv!='none':
-    paths['modeling']=args.modelingmv
+            metrics = {'chicp': [], 'chilca': [], 'chim': []}
+            
+            for i, t in enumerate(times):
+                # Get image at time t
+                # Note: mv.get_image(t) interpolates if t is not exactly in mv.times
+                # We assume the times are covered by the movie.
+                im = mv.get_image(t)
 
-######################################################################
+                current_obs = obslist_t[i]
 
-obs = eh.obsdata.load_uvfits(args.data)
-obs, times, obslist_t, polpaths = process_obs(obs, args, paths)
+                #flag short baselines before forming closure quantities
+                current_obs = current_obs.flag_bl(["AA", "AP"])
+                
+                # Flag sites for specific metrics (JC for polchisq)
+                current_obs_pol = current_obs.flag_sites(['JC'])
+                
+                # Compute Chi-squared
+                # cphase
+                chicp = current_obs.chisq(im, dtype='cphase', pol='I', ttype='direct', cp_uv_min=1e8)
+                metrics['chicp'].append(chicp)
+                
+                # logcamp
+                chilca = current_obs.chisq(im, dtype='logcamp', pol='I', ttype='direct', cp_uv_min=1e8)
+                metrics['chilca'].append(chilca)
+                
+                # mbreve (polarization)
+                
+                #Remove nan values
+                mask_nan = np.isnan(current_obs_pol.data['vis']) \
+                             + np.isnan(current_obs_pol.data['qvis']) \
+                             + np.isnan(current_obs_pol.data['uvis']) \
+                             + np.isnan(current_obs_pol.data['vvis'])
+                current_obs_pol.data = current_obs_pol.data[~mask_nan]
 
-######################################################################
+                mask = im.ivec != 0
+                chim = current_obs_pol.polchisq(im, dtype='m', ttype='direct', mask=mask, cp_uv_min=1e8)
+                metrics['chim'].append(chim)
+            
+    return metrics
 
-fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(21,6), sharex=True)
 
-ax[0].set_ylabel('$\chi^{2}$ cphase')
-ax[1].set_ylabel('$\chi^{2}$ logcamp')
-ax[2].set_ylabel('$\chi^{2}$ mbreve')
-ax[0].set_xlabel('Time (UTC)')
-ax[1].set_xlabel('Time (UTC)')
-ax[2].set_xlabel('Time (UTC)')
-
-ax[0].set_ylim(0.1,1e6)
-ax[1].set_ylim(0.1,1e7)
-ax[2].set_ylim(0.1,1e8)
-
-mv_chi={}
-
-chisq_cphase={}
-chisq_logcamp={}
-chisq_m={}
-chisq_cphase_avg={}
-chisq_logcamp_avg={}
-chisq_m_avg={}
-
-j=1
-for p in paths.keys():
-    mv=eh.movie.load_hdf5(paths[p])
+def main():
+    args = create_parser().parse_args()
     
-    imlist = [mv.get_image(t) for t in times]
+    # Expand glob patterns for input files
+    input_files = []
+    for pattern in args.input:
+        matched = glob.glob(pattern)
+        if matched:
+            input_files.extend(matched)
+        else:
+            # If no match, treat as literal filename
+            input_files.append(pattern)
     
-    new_movie = eh.movie.merge_im_list(imlist)
-    new_movie.reset_interp(bounds_error=False)
+    if not input_files:
+        print("No input files found matching the pattern(s).")
+        return
     
-    mv_chi[p]=[]
+    print(f"Found {len(input_files)} input file(s): {input_files}")
+    
+    # Load observation
+    print(f"Loading observation: {args.data}")
+    with open(os.devnull, 'w') as devnull:
+        with redirect_stdout(devnull), redirect_stderr(devnull):
+            obs = eh.obsdata.load_uvfits(args.data)
+            #obs = obs.add_fractional_noise(0.01)
+            obs.add_scans()
+            obslist = obs.split_obs()
+    
+    obs_times = np.array([o.data['time'][0] for o in obslist])
+    
+    min_t_list = []
+    max_t_list = []
+    
+    print("Scanning movies for time range...")
+    with open(os.devnull, 'w') as devnull:
+        with redirect_stdout(devnull), redirect_stderr(devnull):
+            for m_path in input_files:
+                mv = eh.movie.load_hdf5(m_path)
+                min_t_list.append(min(mv.times))
+                max_t_list.append(max(mv.times))
+            
+    if not min_t_list:
+        print("No valid movies found.")
+        return
 
-    chicp_t=[]
-    chilca_t=[]
-    chia_t=[]
-    num_list=[]
+    min_t = max(min_t_list)
+    max_t = min(max_t_list)
     
-    chicp_t_csv=[]
-    chilca_t_csv=[]
-    chia_t_csv=[]
+    valid_indices = np.where((obs_times >= min_t) & (obs_times <= max_t))[0]
+    obslist_t = [obslist[i] for i in valid_indices]
+    times = obs_times[valid_indices]
     
-    i=0
-    for im in imlist:
-        chicp=obslist_t[i].chisq(im, dtype='cphase', pol='I', ttype='direct', cp_uv_min=1e8)
-        chilca=obslist_t[i].chisq(im, dtype='logcamp', pol='I', ttype='direct',cp_uv_min=1e8)
-        #chia=obslist_t[i].chisq(im, dtype='m', ttype='direct', pol_prim='qu')
-        mask = im.ivec != 0
+    print(f"Processing {len(times)} time steps from {min_t} to {max_t}.")
+
+    # Number of data points per time step (needed for weighted avg)
+    num_list = [len(o.data) for o in obslist_t]
+    num_arr = np.array(num_list)
+    total_num = np.sum(num_arr)
+
+    # Parallel Processing
+    max_workers = args.ncores
+    print(f"Starting parallel processing with {max_workers} workers...")
+    
+    movie_metrics = []
+    
+    # We pass obslist_t and times to all workers.
+    # functools.partial can fix these arguments.
+    process_func = functools.partial(process_movie, obslist_t=obslist_t, times=times)
+    
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        results_gen = executor.map(process_func, input_files)
         
-        obslist_t[i] = obslist_t[i].flag_sites(['JC'])
-        chia=obslist_t[i].polchisq(im, dtype='m', ttype='direct', mask=mask, cp_uv_min=1e8)
+        for res in tqdm(results_gen, total=len(input_files), desc="Processing hdf5 files"):
+            if res is not None:
+                movie_metrics.append(res)
+    
+    if not movie_metrics:
+        print("No metrics calculated.")
+        return
+    
+    # We need to collect all time-series data to calculate mean/std across movies if Bayesian
+    # Shape: (n_movies, n_times)
+    all_chicp = np.array([m['chicp'] for m in movie_metrics])
+    all_chilca = np.array([m['chilca'] for m in movie_metrics])
+    all_chim = np.array([m['chim'] for m in movie_metrics])
+    
+    # Calculate weighted averages for each movie
+    # Shape: (n_movies,)
+    avg_chicp = np.sum(all_chicp * num_arr, axis=1) / total_num
+    avg_chilca = np.sum(all_chilca * num_arr, axis=1) / total_num
+    avg_chim = np.sum(all_chim * num_arr, axis=1) / total_num
+    
+    results = {'time': times}
+    
+    if len(movie_metrics) > 1:
+        # Bayesian Mode
+        print("Calculating Bayesian statistics...")
         
-        chicp_t.append(chicp*j)
-        chilca_t.append(chilca*j)
-        chia_t.append(chia*j)
+        # Per-time step statistics
+        results['chisq_cp_mean'] = np.mean(all_chicp, axis=0)
+        results['chisq_cp_std'] = np.std(all_chicp, axis=0)
         
-        chicp_t_csv.append(chicp)
-        chilca_t_csv.append(chilca)
-        chia_t_csv.append(chia)
+        results['chisq_lca_mean'] = np.mean(all_chilca, axis=0)
+        results['chisq_lca_std'] = np.std(all_chilca, axis=0)
         
-        num_list.append(len(obslist_t[i].data))
-        i=i+1
+        results['chisq_m_mean'] = np.mean(all_chim, axis=0)
+        results['chisq_m_std'] = np.std(all_chim, axis=0)
         
-    j=j*10
-    
-    mv_chicp=np.sum(np.array(num_list) * np.array(chicp_t_csv)) / np.sum(num_list)
-    mv_chicp=np.round(mv_chicp,2)
-    mv_chi[p].append(mv_chicp)
-    
-    mv_chilca=np.sum(np.array(num_list) * np.array(chilca_t_csv)) / np.sum(num_list)
-    mv_chilca=np.round(mv_chilca,2)
-    mv_chi[p].append(mv_chilca)
-    
-    
-    mv_chia = np.sum(np.array(num_list) * np.array(chia_t_csv)) / np.sum(num_list)
-    mv_chia=np.round(mv_chia,2)
-    mv_chi[p].append(mv_chia)
-          
-    chisq_cphase[p]=chicp_t_csv
-    chisq_logcamp[p]=chilca_t_csv
-    chisq_m[p]=chia_t_csv
-    
-    chisq_cphase_avg[p]=mv_chicp*np.ones(len(times))
-    chisq_logcamp_avg[p]=mv_chilca*np.ones(len(times))
-    chisq_m_avg[p]=mv_chia*np.ones(len(times))
-    
-    mc=colors[p]
-    alpha=1.0
-    lc=colors[p]
-    ax[0].plot(times, chicp_t,  marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha, label=labels[p])
-    ax[0].set_yscale('log')
-    ax[1].plot(times, chilca_t, marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha)
-    ax[1].set_yscale('log')
-    ax[2].plot(times, chia_t, marker ='o', mfc=mc, mec=mc, mew=2.5, ms=2.5, ls='-', lw=1,  color=lc, alpha=alpha)
-    ax[2].set_yscale('log')
-  
-k=0      
-for p in paths.keys():
-    ax[0].hlines(10**k, xmin=times[0], xmax=times[-1], color=colors[p], ls='--', lw=1.5, zorder=0)
-    ax[1].hlines(10**k, xmin=times[0], xmax=times[-1], color=colors[p], ls='--', lw=1.5, zorder=0)
-    ax[2].hlines(10**k, xmin=times[0], xmax=times[-1], color=colors[p], ls='--', lw=1.5, zorder=0)
-    k=k+1
-
-    ax[0].yaxis.set_ticklabels([])
-    ax[1].yaxis.set_ticklabels([])
-    ax[2].yaxis.set_ticklabels([])
-
-ax[0].legend(ncols=len(paths.keys()), loc='best',  bbox_to_anchor=(3., 1.2), markerscale=5.0)
-#ax[0].text(times[0], 5e6, f'Stokes: {pol}', color='black', fontsize=18)
-
-col_labels=[]
-for p in paths.keys():
-    col_labels.append(titles[p])
-    
-col_labels = np.array(col_labels)
-row_labels = ['$\chi^{2}$ cphase','$\chi^{2}$ logcamp','$\chi^{2}$ mbreve']
-table_vals = pd.DataFrame(data=mv_chi, index=row_labels)
-table = ax[1].table(cellText=table_vals.values,
-                     rowLabels=table_vals.index,
-                     colLabels=col_labels,#table_vals.columns,
-                     cellLoc='center',
-                     loc='bottom',
-                     bbox=[-0.66, -0.5, 2.5, 0.3])
-
-table.auto_set_font_size(False)
-table.set_fontsize(18)
-for c in table.get_children():
-    c.set_edgecolor('none')
-    c.set_text_props(color='black')
-    c.set_facecolor('none')
-    c.set_edgecolor('black')
-    
-# List of all dictionaries
-dicts = {
-    "chisq_cp": chisq_cphase,
-    "chisq_lca": chisq_logcamp,
-    "chisq_m": chisq_m,
-    "chisq_cp_avg": chisq_cphase_avg,
-    "chisq_lca_avg": chisq_logcamp_avg,
-    "chisq_m_avg": chisq_m_avg,
-}
-
-# Create DataFrame with the time column
-df = pd.DataFrame({"time": times})
-
-# Merge each dictionary into the DataFrame with appropriate column names
-for name, d in dicts.items():
-    temp_df = pd.DataFrame(d)
-    temp_df.columns = [f"{name}_{col}" for col in temp_df.columns]  # Rename columns
-    df = pd.concat([df, temp_df], axis=1)  # Merge with main DataFrame
-
-# Save to CSV
-df.to_csv(args.outpath+".csv", index=False)
+        # Time-averaged statistics (scalar values, repeated for dataframe)
+        # Mean and Std of the weighted averages across movies
+        results['chisq_cp_avg_mean'] = np.full(len(times), np.mean(avg_chicp))
+        results['chisq_cp_avg_std'] = np.full(len(times), np.std(avg_chicp))
         
-plt.savefig(args.outpath+'.png', bbox_inches='tight', dpi=300)
+        results['chisq_lca_avg_mean'] = np.full(len(times), np.mean(avg_chilca))
+        results['chisq_lca_avg_std'] = np.full(len(times), np.std(avg_chilca))
+        
+        results['chisq_m_avg_mean'] = np.full(len(times), np.mean(avg_chim))
+        results['chisq_m_avg_std'] = np.full(len(times), np.std(avg_chim))
+        
+    else:
+        # Non-Bayesian Mode (Single Movie)
+        print("Processing single movie results...")
+        
+        results['chisq_cp'] = all_chicp[0]
+        results['chisq_lca'] = all_chilca[0]
+        results['chisq_m'] = all_chim[0]
+        
+        results['chisq_cp_avg'] = np.full(len(times), avg_chicp[0])
+        results['chisq_lca_avg'] = np.full(len(times), avg_chilca[0])
+        results['chisq_m_avg'] = np.full(len(times), avg_chim[0])
+
+    # Save to CSV
+    df = pd.DataFrame(results)
+    csv_path = args.outpath + ".csv"
+    df.to_csv(csv_path, index=False)
+    print(f"Saved CSV to {csv_path}")
+    
+    # Plotting
+    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(21, 6), sharex=True)
+    
+    ax[0].set_ylabel(r'$\chi^{2}$ cphase')
+    ax[1].set_ylabel(r'$\chi^{2}$ logcamp')
+    ax[2].set_ylabel(r'$\chi^{2}$ mbreve')
+    
+    for a in ax:
+        a.set_xlabel('Time (UTC)')
+        a.set_yscale('log')
+    
+    if len(movie_metrics) > 1:
+        # Plot Mean with Error Bars
+        ax[0].errorbar(times, results['chisq_cp_mean'], yerr=results['chisq_cp_std'], fmt='-o', label='Mean', color='tab:orange', capsize=3, alpha=0.8)
+        ax[1].errorbar(times, results['chisq_lca_mean'], yerr=results['chisq_lca_std'], fmt='-o', color='tab:orange', capsize=3, alpha=0.8)
+        ax[2].errorbar(times, results['chisq_m_mean'], yerr=results['chisq_m_std'], fmt='-o', color='tab:orange', capsize=3, alpha=0.8)
+        
+        # Add horizontal lines for the chisq=1
+        ax[0].axhline(1, color='black', linestyle='-')
+        ax[1].axhline(1, color='black', linestyle='-')
+        ax[2].axhline(1, color='black', linestyle='-')
+
+        # Add horizontal lines for the global average (mean of avg)
+        ax[0].axhline(results['chisq_cp_avg_mean'][0], color='tab:orange', linestyle='--', label='$\chi^{2}_{cp}$ avg:'+f'{results["chisq_cp_avg_mean"][0]:.2f} $\pm$ {results["chisq_cp_avg_std"][0]:.2f}')
+        ax[1].axhline(results['chisq_lca_avg_mean'][0], color='tab:orange', linestyle='--', label='$\chi^{2}_{lca}$ avg:'+f'{results["chisq_lca_avg_mean"][0]:.2f} $\pm$ {results["chisq_lca_avg_std"][0]:.2f}')
+        ax[2].axhline(results['chisq_m_avg_mean'][0], color='tab:orange', linestyle='--', label='$\chi^{2}_{m}$ avg:'+f'{results["chisq_m_avg_mean"][0]:.2f} $\pm$ {results["chisq_m_avg_std"][0]:.2f}')
+        
+    else:
+        # Plot Single Line
+        ax[0].plot(times, results['chisq_cp'], '-o', color='tab:blue')
+        ax[1].plot(times, results['chisq_lca'], '-o', color='tab:blue')
+        ax[2].plot(times, results['chisq_m'], '-o', color='tab:blue')
+        
+        # Add horizontal lines for the chisq=1
+        ax[0].axhline(1, color='black', linestyle='-')
+        ax[1].axhline(1, color='black', linestyle='-')
+        ax[2].axhline(1, color='black', linestyle='-')
+
+        # Add horizontal lines for the average
+        ax[0].axhline(results['chisq_cp_avg'][0], color='tab:blue', linestyle='--', label='$\chi^{2}_{cp}$ avg:'+f'{results["chisq_cp_avg"][0]:.2f}')
+        ax[1].axhline(results['chisq_lca_avg'][0], color='tab:blue', linestyle='--', label='$\chi^{2}_{lca}$ avg:'+f'{results["chisq_lca_avg"][0]:.2f}')
+        ax[2].axhline(results['chisq_m_avg'][0], color='tab:blue', linestyle='--', label='$\chi^{2}_{m}$ avg:'+f'{results["chisq_m_avg"][0]:.2f}')
+
+    ax[0].legend()
+    ax[1].legend()
+    ax[2].legend()
+    plt.tight_layout()
+    png_path = args.outpath + ".png"
+    plt.savefig(png_path, bbox_inches='tight', dpi=300)
+    print(f"Saved plot to {png_path}")
+
+if __name__ == "__main__":
+    main()
