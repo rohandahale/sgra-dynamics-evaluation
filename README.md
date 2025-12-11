@@ -1,1 +1,1 @@
-# Evaludation scripts for SgrA video reconstructions
+# Evaluation and validation scripts for black hole video reconstructions
