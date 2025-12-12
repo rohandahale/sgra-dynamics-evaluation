@@ -37,8 +37,8 @@ def test_hotspot():
     assert result.returncode == 0, "Script failed to run"
     
     # Check outputs
-    csv_file = f"{out_prefix}.csv"
-    png_file = f"{out_prefix}.png"
+    csv_file = f"{out_prefix}_hotspot.csv"
+    png_file = f"{out_prefix}_hotspot.png"
     
     assert os.path.exists(csv_file), f"CSV output missing: {csv_file}"
     assert os.path.exists(png_file), f"PNG output missing: {png_file}"
@@ -97,8 +97,8 @@ def test_hotspot_single():
     assert result.returncode == 0, "Script failed to run"
     
     # Check outputs
-    csv_file = f"{out_prefix}.csv"
-    png_file = f"{out_prefix}.png"
+    csv_file = f"{out_prefix}_hotspot.csv"
+    png_file = f"{out_prefix}_hotspot.png"
     
     assert os.path.exists(csv_file), f"CSV output missing: {csv_file}"
     assert os.path.exists(png_file), f"PNG output missing: {png_file}"

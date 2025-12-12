@@ -35,11 +35,11 @@ def test_chisq():
     assert result.returncode == 0, "Script failed to run"
     
     # Check outputs
-    assert os.path.exists(out_prefix + ".csv"), "CSV output missing"
-    assert os.path.exists(out_prefix + ".png"), "PNG output missing"
+    assert os.path.exists(out_prefix + "_chisq.csv"), "CSV output missing"
+    assert os.path.exists(out_prefix + "_chisq.png"), "PNG output missing"
     
     # Check CSV content
-    df = pd.read_csv(out_prefix + ".csv")
+    df = pd.read_csv(out_prefix + "_chisq.csv")
     print("CSV Columns:", df.columns)
     
     # Since we passed 2 movies, we expect Bayesian columns
@@ -62,12 +62,12 @@ def test_chisq():
     
     # Cleanup: Delete test outputs
     print("Cleaning up test outputs...")
-    if os.path.exists(out_prefix + ".csv"):
-        os.remove(out_prefix + ".csv")
-        print(f"Deleted {out_prefix}.csv")
-    if os.path.exists(out_prefix + ".png"):
-        os.remove(out_prefix + ".png")
-        print(f"Deleted {out_prefix}.png")
+    if os.path.exists(out_prefix + "_chisq.csv"):
+        os.remove(out_prefix + "_chisq.csv")
+        print(f"Deleted {out_prefix}_chisq.csv")
+    if os.path.exists(out_prefix + "_chisq.png"):
+        os.remove(out_prefix + "_chisq.png")
+        print(f"Deleted {out_prefix}_chisq.png")
 
 if __name__ == "__main__":
     test_chisq()

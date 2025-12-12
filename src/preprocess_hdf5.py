@@ -31,6 +31,8 @@ def create_parser():
                    help='input HDF5 files (can use shell glob expansion)')
     p.add_argument('-o', '--outname', type=str, required=True,
                    help='base output name (without extension)')
+    p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
+    p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('-n', '--ncores', type=int, default=16,
                    help='number of cores for parallel processing (default: 16)')
     return p
@@ -83,11 +85,35 @@ with open(os.devnull, 'w') as devnull:
         obslist = obs.split_obs()
 
 obs_times = np.array([o.data['time'][0] for o in obslist])
+data_min_t = obs_times.min()
+data_max_t = obs_times.max()
+print(f"Data time range: {data_min_t:.3f} - {data_max_t:.3f} h")
+
+if args.tstart is not None or args.tstop is not None:
+    tstart = args.tstart if args.tstart is not None else data_min_t
+    tstop = args.tstop if args.tstop is not None else data_max_t
+    print(f"Time flagging data to use in range: {tstart:.3f} - {tstop:.3f} h")
+    
+    with open(os.devnull, 'w') as devnull:
+         with redirect_stdout(devnull), redirect_stderr(devnull):
+             obs = obs.flag_UT_range(UT_start_hour=tstart, UT_stop_hour=tstop, output='flagged')
+             obs.add_scans()
+             obslist = obs.split_obs()
+    
+    if not obslist:
+        print("No data remaining after time flagging.")
+        exit(1)
+
+    obs_times = np.array([o.data['time'][0] for o in obslist])
+    print(f"New data time range: {obs_times.min():.3f} - {obs_times.max():.3f} h")
+
+times = obs_times
+min_t = obs_times.min()
+max_t = obs_times.max()
 
 min_t_list = []
 max_t_list = []
 
-print("Scanning movies for time range...")
 with open(os.devnull, 'w') as devnull:
     with redirect_stdout(devnull), redirect_stderr(devnull):
         for m_path in input_files:
@@ -99,14 +125,13 @@ if not min_t_list:
     print("No valid movies found.")
     exit(1)
 
-min_t = max(min_t_list)
-max_t = min(max_t_list)
+movie_min_t = max(min_t_list)
+movie_max_t = min(max_t_list)
+print(f"Movie time range: {movie_min_t:.3f} - {movie_max_t:.3f} h")
 
-valid_indices = np.where((obs_times >= min_t) & (obs_times <= max_t))[0]
-obslist_t = [obslist[i] for i in valid_indices]
-times = obs_times[valid_indices]
+if movie_min_t > times.min() or movie_max_t < times.max():
+     print("Warning: Movie times do not span the whole duration of data. Extrapolation will be used.")
 
-print(f"Valid time range: {min_t:.3f} - {max_t:.3f}")
 print(f"Number of valid time frames: {len(times)}")
 
 ######################################################################
@@ -129,6 +154,7 @@ def process_single_file(m_path, times, min_t, max_t, npix, fov, blur,
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             mov = eh.movie.load_hdf5(m_path)
+            mov.reset_interp(bounds_error=False)
     
     ######################################################################
     # 1. Regrid to 200x200 pixels and 200x200uas FOV

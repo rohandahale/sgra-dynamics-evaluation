@@ -42,8 +42,8 @@ def test_nxcorr():
     pols = ['I', 'Pmag', 'X', 'Pvec']
     
     for mode in modes:
-        csv_file = f"{out_prefix}_{mode}.csv"
-        png_file = f"{out_prefix}_{mode}.png"
+        csv_file = f"{out_prefix}_{mode}_nxcorr.csv"
+        png_file = f"{out_prefix}_{mode}_nxcorr.png"
         
         assert os.path.exists(csv_file), f"CSV output missing: {csv_file}"
         assert os.path.exists(png_file), f"PNG output missing: {png_file}"
@@ -77,8 +77,8 @@ def test_nxcorr():
     # Cleanup: Delete test outputs
     print("\nCleaning up test outputs...")
     for mode in modes:
-        csv_file = f"{out_prefix}_{mode}.csv"
-        png_file = f"{out_prefix}_{mode}.png"
+        csv_file = f"{out_prefix}_{mode}_nxcorr.csv"
+        png_file = f"{out_prefix}_{mode}_nxcorr.png"
         
         if os.path.exists(csv_file):
             os.remove(csv_file)
@@ -120,8 +120,8 @@ def test_nxcorr_single_movie():
     pols = ['I', 'Pmag', 'X', 'Pvec']
     
     for mode in modes:
-        csv_file = f"{out_prefix}_{mode}.csv"
-        png_file = f"{out_prefix}_{mode}.png"
+        csv_file = f"{out_prefix}_{mode}_nxcorr.csv"
+        png_file = f"{out_prefix}_{mode}_nxcorr.png"
         
         assert os.path.exists(csv_file), f"CSV output missing: {csv_file}"
         assert os.path.exists(png_file), f"PNG output missing: {png_file}"
@@ -150,8 +150,8 @@ def test_nxcorr_single_movie():
     
     # Cleanup
     for mode in modes:
-        csv_file = f"{out_prefix}_{mode}.csv"
-        png_file = f"{out_prefix}_{mode}.png"
+        csv_file = f"{out_prefix}_{mode}_nxcorr.csv"
+        png_file = f"{out_prefix}_{mode}_nxcorr.png"
         
         if os.path.exists(csv_file):
             os.remove(csv_file)

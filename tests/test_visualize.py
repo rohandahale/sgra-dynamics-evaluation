@@ -44,7 +44,7 @@ class TestVisualize(unittest.TestCase):
         # Check outputs
         self.assertTrue(os.path.exists(f'{self.outpath_prefix}_total.gif'), "Total Intensity GIF not created")
         self.assertTrue(os.path.exists(f'{self.outpath_prefix}_lp.gif'), "LP GIF not created")
-        self.assertTrue(os.path.exists(f'{self.outpath_prefix}_var.png'), "Variance Plot not created")
+        self.assertTrue(os.path.exists(f'{self.outpath_prefix}_visvar.png'), "Variance Plot not created")
 
 if __name__ == '__main__':
     unittest.main()

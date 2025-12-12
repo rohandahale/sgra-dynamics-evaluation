@@ -40,8 +40,8 @@ def test_single_input():
     subprocess.check_call(cmd)
     
     # Check outputs
-    csv_path = out_prefix + '.csv'
-    png_path = out_prefix + '.png'
+    csv_path = out_prefix + '_rex.csv'
+    png_path = out_prefix + '_rex.png'
     
     if not os.path.exists(csv_path):
         raise FileNotFoundError("Single input CSV not found")
@@ -81,8 +81,8 @@ def test_multi_input(uvfits, hdf5):
     subprocess.check_call(cmd)
     
     # Check outputs
-    csv_path = out_prefix + '.csv'
-    png_path = out_prefix + '.png'
+    csv_path = out_prefix + '_rex.csv'
+    png_path = out_prefix + '_rex.png'
     
     if not os.path.exists(csv_path):
         raise FileNotFoundError("Multi input CSV not found")
@@ -118,7 +118,7 @@ def test_optional_truth(uvfits, hdf5):
     subprocess.check_call(cmd)
     
     # Check outputs
-    csv_path = out_prefix + '.csv'
+    csv_path = out_prefix + '_rex.csv'
     if not os.path.exists(csv_path):
         raise FileNotFoundError("Optional truth CSV not found")
         
@@ -152,7 +152,7 @@ def test_with_truth(uvfits, hdf5):
     subprocess.check_call(cmd)
     
     # Check outputs
-    csv_path = out_prefix + '.csv'
+    csv_path = out_prefix + '_rex.csv'
     if not os.path.exists(csv_path):
         raise FileNotFoundError("With truth CSV not found")
         

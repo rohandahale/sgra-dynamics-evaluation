@@ -43,6 +43,8 @@ def create_parser():
     p.add_argument('--truthmv', type=str, required=True, help='Truth HDF5 movie file')
     p.add_argument('--input', type=str, nargs='+', required=True, help='Glob pattern(s) or list of HDF5 model files (e.g., "path/*.h5")')
     p.add_argument('-o', '--outpath', type=str, default='./nxcorr', help='Output prefix (without extension)')
+    p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
+    p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('-n', '--ncores', type=int, default=32, help='Number of cores to use for parallel processing')
     return p
 
@@ -108,38 +110,17 @@ def isotropy_metric_normalized(u, v, i_max=None, r_max=None):
     return (iso/i_max) * (1 - rad_hom/r_max)
 
 
-def get_weights(obs, input_files, times):
+def get_weights(obs, times):
     """
     Calculate weights (w_norm) for the observation times.
-    Replaces process_obs_weights from utilities.py.
     """
-    
+
     obs.add_scans()
     obslist = obs.split_obs()
     
-    obs_times = np.array([o.data['time'][0] for o in obslist])
-    
-    min_t_list = []
-    max_t_list = []
-    
-    print("Scanning movies for time range...")
-    with open(os.devnull, 'w') as devnull:
-        with redirect_stdout(devnull), redirect_stderr(devnull):
-            for m_path in input_files:
-                mv = eh.movie.load_hdf5(m_path)
-                min_t_list.append(min(mv.times))
-                max_t_list.append(max(mv.times))
-            
-    if not min_t_list:
-        print("No valid movies found.")
-        return
-
-    min_t = max(min_t_list)
-    max_t = min(max_t_list)
-    
-    valid_indices = np.where((obs_times >= min_t) & (obs_times <= max_t))[0]
-    obslist_t = [obslist[i] for i in valid_indices]
-    times = obs_times[valid_indices]
+    # We assume 'times' passed in ensures obslist is aligned or we just use obslist directly.
+    # The calling function handles time flagging and consistency.
+    obslist_t = obslist
     
     I_scores = []
     snr = {'I': [], 'Q': [], 'U': [], 'V': []}
@@ -148,23 +129,26 @@ def get_weights(obs, input_files, times):
     rmax = 0.513
     
     for s_obs in obslist_t:
+        # Create a copy for flagging (used for I_scores)
+        s_obs_flagged = s_obs.copy()
         with open(os.devnull, 'w') as devnull:
             with redirect_stdout(devnull), redirect_stderr(devnull):
-                if 'AA' in s_obs.data['t1'] or 'AA' in s_obs.data['t2']: 
-                    s_obs = s_obs.flag_sites('AP')
-                if 'JC' in s_obs.data['t1'] or 'JC' in s_obs.data['t2']: 
-                    s_obs = s_obs.flag_sites('SM')
+                if 'AA' in s_obs_flagged.data['t1'] or 'AA' in s_obs_flagged.data['t2']: 
+                    s_obs_flagged = s_obs_flagged.flag_sites('AP')
+                if 'JC' in s_obs_flagged.data['t1'] or 'JC' in s_obs_flagged.data['t2']: 
+                    s_obs_flagged = s_obs_flagged.flag_sites('SM')
             
-        if len(s_obs.data) == 0:
+        if len(s_obs_flagged.data) == 0:
             I_scores.append(0)
             for k in snr: snr[k].append(0)
             continue
             
-        unpackedobj = np.transpose(s_obs.unpack(['u', 'v'], debias=True, conj=True))
+        unpackedobj = np.transpose(s_obs_flagged.unpack(['u', 'v'], debias=True, conj=True))
         u = unpackedobj['u']
         v = unpackedobj['v']
         I_scores.append(isotropy_metric_normalized(u, v, i_max=imax, r_max=rmax))
         
+        # SNR uses unflagged original s_obs
         df = pd.DataFrame(s_obs.data)
         snr['I'].append(np.mean(np.abs(df['vis'])/df['sigma']))
         snr['Q'].append(np.mean(np.abs(df['qvis'])/df['qsigma']))
@@ -337,6 +321,7 @@ def process_movie_nxcorr(m_path, mvt, times, obslist_t, npix, fov, pol, mode, w_
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             mv = eh.movie.load_hdf5(m_path)
+            mv.reset_interp(bounds_error=False)
             im_list = []
             imt_list = []
             beams = []
@@ -484,7 +469,7 @@ def save_and_plot(times, all_metrics_data, mode, outpath, is_bayesian):
                 results[f'pass_rate_{pol}'] = np.full(len(times), metrics_data[0]['pass_rate'])
 
     # Save CSV
-    csv_path = f"{outpath}_{mode}.csv"
+    csv_path = f"{outpath}_{mode}_nxcorr.csv"
     df = pd.DataFrame(results)
     df.to_csv(csv_path, index=False)
     print(f"Saved CSV to {csv_path}")
@@ -524,7 +509,7 @@ def save_and_plot(times, all_metrics_data, mode, outpath, is_bayesian):
         ax.legend()
 
     plt.tight_layout()
-    png_path = f"{outpath}_{mode}.png"
+    png_path = f"{outpath}_{mode}_nxcorr.png"
     plt.savefig(png_path, bbox_inches='tight', dpi=300)
     print(f"Saved plot to {png_path}")
     plt.close()
@@ -547,10 +532,38 @@ def main():
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             obs = eh.obsdata.load_uvfits(args.data)
+            obs = obs.avg_coherent(60)
             
+    # Calculate data time range
+    obs.add_scans()
+    obslist = obs.split_obs() 
+    obs_times = np.array([o.data['time'][0] for o in obslist])
+    data_min_t = obs_times.min()
+    data_max_t = obs_times.max()
+    print(f"Data time range: {data_min_t:.3f} - {data_max_t:.3f} h")
+
+    if args.tstart is not None or args.tstop is not None:
+        tstart = args.tstart if args.tstart is not None else data_min_t
+        tstop = args.tstop if args.tstop is not None else data_max_t
+        print(f"Time flagging data to use in range: {tstart:.3f} - {tstop:.3f} h")
+        
+        with open(os.devnull, 'w') as devnull:
+             with redirect_stdout(devnull), redirect_stderr(devnull):
+                 obs = obs.flag_UT_range(UT_start_hour=tstart, UT_stop_hour=tstop, output='flagged')
+                 obs.add_scans()
+                 obslist = obs.split_obs()
+        
+        if not obslist:
+            print("No data remaining after time flagging.")
+            return
+
+        obs_times = np.array([o.data['time'][0] for o in obslist])
+        print(f"New data time range: {obs_times.min():.3f} - {obs_times.max():.3f} h")
+
+    times = obs_times
+
     min_t_list = []
     max_t_list = []
-    print("Scanning movies for time range...")
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             for m_path in input_files:
@@ -558,18 +571,20 @@ def main():
                 min_t_list.append(min(mv.times))
                 max_t_list.append(max(mv.times))
             mvt = eh.movie.load_hdf5(args.truthmv)
+            mvt.reset_interp(bounds_error=False)
             min_t_list.append(min(mvt.times))
             max_t_list.append(max(mvt.times))
-    min_t = max(min_t_list)
-    max_t = min(max_t_list)
-    obs.add_scans()
-    obs_times = np.array([o.data['time'][0] for o in obs.split_obs()])
-    valid_indices = np.where((obs_times >= min_t) & (obs_times <= max_t))[0]
-    times = obs_times[valid_indices]
-    print(f"Processing {len(times)} time steps from {min_t} to {max_t}.")
     
-    print("Computing weights...")
-    obslist_t, w_norm = get_weights(obs, input_files, times)
+    movie_min_t = max(min_t_list)
+    movie_max_t = min(max_t_list)
+    print(f"Movie time range: {movie_min_t:.3f} - {movie_max_t:.3f} h")
+
+    if movie_min_t > times.min() or movie_max_t < times.max():
+         print("Warning: Movie times do not span the whole duration of data. Extrapolation will be used.")
+
+    print(f"Processing {len(times)} time steps.")
+    
+    obslist_t, w_norm = get_weights(obs, times)
     
     npix = 200
     fov = 200 * eh.RADPERUAS

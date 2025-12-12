@@ -1,19 +1,23 @@
 import unittest
+import warnings
+
+# Suppress all warnings
+warnings.filterwarnings('ignore')
+
 import os
 import shutil
 import pandas as pd
 import sys
 import numpy as np
-
-# Add src to path to import mean_image_extraction
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-import mean_image_extraction
+import subprocess
 import ehtim as eh
 
 class TestMeanImageExtraction(unittest.TestCase):
     def setUp(self):
+        warnings.simplefilter('ignore')
         self.test_dir = 'tests/test_data'
-        self.output_csv = 'tests/test_output.csv'
+        self.output_base = 'tests/test_output'
+        self.output_csv = self.output_base + '_mean_image_extraction.csv'
         os.makedirs(self.test_dir, exist_ok=True)
         
         # Create dummy FITS files
@@ -38,9 +42,11 @@ class TestMeanImageExtraction(unittest.TestCase):
 
     def test_extraction_directory(self):
         # Run the main function logic
-        cmd = f"python3 src/mean_image_extraction.py --fits {self.test_dir} -o {self.output_csv} --ncores 1"
-        exit_code = os.system(cmd)
-        self.assertEqual(exit_code, 0, "Script execution failed")
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/mean_image_extraction.py'))
+        cmd = [sys.executable, script_path, '--fits', self.test_dir, '-o', self.output_base, '--ncores', '1']
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, f"Script execution failed: {result.stderr}")
 
         # Check output
         self.assertTrue(os.path.exists(self.output_csv), "Output CSV not created")
@@ -50,9 +56,11 @@ class TestMeanImageExtraction(unittest.TestCase):
 
     def test_extraction_directory_parallel(self):
         # Run with parallel cores
-        cmd = f"python3 src/mean_image_extraction.py --fits {self.test_dir} -o {self.output_csv} --ncores 2"
-        exit_code = os.system(cmd)
-        self.assertEqual(exit_code, 0, "Parallel script execution failed")
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/mean_image_extraction.py'))
+        cmd = [sys.executable, script_path, '--fits', self.test_dir, '-o', self.output_base, '--ncores', '2']
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, f"Parallel script execution failed: {result.stderr}")
 
         # Check output
         self.assertTrue(os.path.exists(self.output_csv), "Output CSV not created")
@@ -62,9 +70,11 @@ class TestMeanImageExtraction(unittest.TestCase):
 
     def test_extraction_single_file(self):
         single_file = os.path.join(self.test_dir, 'sample1.fits')
-        cmd = f"python3 src/mean_image_extraction.py --fits {single_file} -o {self.output_csv}"
-        exit_code = os.system(cmd)
-        self.assertEqual(exit_code, 0, "Script execution failed for single file")
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../src/mean_image_extraction.py'))
+        cmd = [sys.executable, script_path, '--fits', single_file, '-o', self.output_base]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, f"Script execution failed for single file: {result.stderr}")
         
         df = pd.read_csv(self.output_csv)
         self.assertEqual(len(df), 1, "Should have 1 row for single file")

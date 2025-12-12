@@ -46,6 +46,8 @@ def create_parser():
     p.add_argument('--truthmv', type=str, required=True, help='Truth HDF5 movie file')
     p.add_argument('--input', type=str, nargs='+', required=True, help='Glob pattern(s) or list of HDF5 model files (e.g., "path/*.h5")')
     p.add_argument('-o', '--outpath', type=str, default='./hotspot', help='Output prefix (without extension)')
+    p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
+    p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('-n', '--ncores', type=int, default=32, help='Number of cores to use for parallel processing')
     return p
 
@@ -66,6 +68,7 @@ def process_movie(filepath, times, fov, pix):
         with open(os.devnull, 'w') as devnull:
             with redirect_stdout(devnull), redirect_stderr(devnull):
                 mov = eh.movie.load_hdf5(filepath)
+                mov.reset_interp(bounds_error=False)
                 frames = [mov.get_image(t).regrid_image(fov*eh.RADPERUAS, pix).imarr() for t in times]
         
         median_frame = np.median(frames, axis=0)
@@ -87,7 +90,6 @@ def process_movie(filepath, times, fov, pix):
             "fwhm": fwhm, "flux": flux,
         })
     except Exception as e:
-        # print(f"❌ Error in {filepath}: {e}")
         return None
 
 def main():
@@ -113,27 +115,67 @@ def main():
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             obs = eh.obsdata.load_uvfits(args.data)
+    
+    obs_times = np.unique(obs.data['time'])
+    data_min_t = obs_times.min()
+    data_max_t = obs_times.max()
+    print(f"Data time range: {data_min_t:.3f} - {data_max_t:.3f} h")
+
+    if args.tstart is not None or args.tstop is not None:
+        tstart = args.tstart if args.tstart is not None else data_min_t
+        tstop = args.tstop if args.tstop is not None else data_max_t
+        print(f"Time flagging data to use in range: {tstart:.3f} - {tstop:.3f} h")
+        
+        with open(os.devnull, 'w') as devnull:
+             with redirect_stdout(devnull), redirect_stderr(devnull):
+                 obs = obs.flag_UT_range(UT_start_hour=tstart, UT_stop_hour=tstop, output='flagged')
+        
+        obs_times = np.unique(obs.data['time'])
+        if len(obs_times) == 0:
+            print("No data remaining after time flagging.")
+            return
+        
+        print(f"New data time range: {obs_times.min():.3f} - {obs_times.max():.3f} h")
+    
+    times = obs_times
+    
+    min_t_list = []
+    max_t_list = []
+    
+    with open(os.devnull, 'w') as devnull:
+        with redirect_stdout(devnull), redirect_stderr(devnull):
+            # Scan Inputs
+            for m_path in input_files:
+                mv = eh.movie.load_hdf5(m_path)
+                min_t_list.append(min(mv.times))
+                max_t_list.append(max(mv.times))
+            # Scan Truth
             truth_mov = eh.movie.load_hdf5(args.truthmv)
-    
-    times1 = np.unique(obs.data['time'])
-    times2 = truth_mov.times
-    t_min = max(times1.min(), times2.min())
-    t_max = min(times1.max(), times2.max())
-    times = times1[(times1 >= t_min) & (times1 <= t_max)]
-    
-    print(f"Processing {len(times)} time steps from {t_min} to {t_max}.")
+            min_t_list.append(min(truth_mov.times))
+            max_t_list.append(max(truth_mov.times))
+
+    if not min_t_list:
+        print("No valid movies found.")
+        return
+
+    movie_min_t = max(min_t_list)
+    movie_max_t = min(max_t_list)
+    print(f"Movie time range: {movie_min_t:.3f} - {movie_max_t:.3f} h")
+
+    if movie_min_t > times.min() or movie_max_t < times.max():
+         print("Warning: Movie times do not span the whole duration of data. Extrapolation will be used.")
+
+    print(f"Processing {len(times)} time steps.")
     
     fov, pix = 200, 128
     
     # --- Process Truth ---
-    print("Processing truth movie...")
     df_truth = process_movie(args.truthmv, times, fov, pix)
     if df_truth is None:
         print("Failed to process truth movie.")
         return
 
     # --- Process Input Files ---
-    print("Processing input files...")
     results = []
     with ProcessPoolExecutor(max_workers=args.ncores) as executor:
         futures = [executor.submit(process_movie, f, times, fov, pix) for f in input_files]
@@ -203,7 +245,7 @@ def main():
         df_combined[q+"_pass_percent"] = pass_percent[q]
 
     # --- Save CSV ---
-    csv_path = f"{args.outpath}.csv"
+    csv_path = f"{args.outpath}_hotspot.csv"
     df_combined.to_csv(csv_path, index=False)
     print(f"✅ Saved results to {csv_path}")
 
@@ -263,9 +305,9 @@ def main():
     fig.suptitle(f"{title_name}: Hotspot Feature Extraction", fontsize=18)
     fig.tight_layout(rect=[0, 0, 1, 0.96])
 
-    plot_path = f"{args.outpath}.png"
+    plot_path = f"{args.outpath}_hotspot.png"
     fig.savefig(plot_path, bbox_inches="tight")
-    print(f"✅ Plot saved: {plot_path}")
+    print(f"Plot saved: {plot_path}")
 
 if __name__ == "__main__":
     main()

@@ -36,32 +36,59 @@ def create_parser():
     p.add_argument('-i', '--input', type=str, required=True, help='Path to reconstruction HDF5 file.')
     p.add_argument('--truthmv', type=str, default=None, help='Path to truth HDF5 file (optional).')
     p.add_argument('-o', '--outpath', type=str, default='./visualize_output', help='Output path prefix (without extension).')
+    p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
+    p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('--fps', type=int, default=10, help='Frames per second for GIFs.')
     p.add_argument('--ncores', type=int, default=16, help='Number of cores for parallel processing.')
     return p
 
-def process_obs_local(obs, recon_path, truth_path=None):
+def process_obs_local(obs, recon_path, truth_path=None, tstart=None, tstop=None):
     obs.add_scans()
     obslist = obs.split_obs()
     
-    obs_times = [o.data['time'][0] for o in obslist]
-    print(f"Found {len(obs_times)} observation times.")
+    obs_times = np.array([o.data['time'][0] for o in obslist])
+    data_min_t = obs_times.min()
+    data_max_t = obs_times.max()
+    print(f"Data time range: {data_min_t:.3f} - {data_max_t:.3f} h")
     
+    if tstart is not None or tstop is not None:
+        ts = tstart if tstart is not None else data_min_t
+        te = tstop if tstop is not None else data_max_t
+        print(f"Time flagging data to use in range: {ts:.3f} - {te:.3f} h")
+        
+        with open(os.devnull, 'w') as devnull:
+             with redirect_stdout(devnull), redirect_stderr(devnull):
+                 obs = obs.flag_UT_range(UT_start_hour=ts, UT_stop_hour=te, output='flagged')
+                 obs.add_scans()
+                 obslist = obs.split_obs()
+        
+        if not obslist:
+             print("No data remaining after time flagging.")
+             return obs, None
+        
+        obs_times = np.array([o.data['time'][0] for o in obslist])
+        print(f"New data time range: {obs_times.min():.3f} - {obs_times.max():.3f} h")
+        
+    filtered_times = obs_times
+    print(f"Using {len(filtered_times)} observation times.")
+    
+    # Check Movie ranges for warning
     recon_mv = eh.movie.load_hdf5(recon_path)
-    min_t = min(recon_mv.times)
-    max_t = max(recon_mv.times)
-    print(f"Recon time range: {min_t} - {max_t}")
+    min_t_list = [min(recon_mv.times)]
+    max_t_list = [max(recon_mv.times)]
     
     if truth_path:
         truth_mv = eh.movie.load_hdf5(truth_path)
-        min_t = max(min_t, min(truth_mv.times))
-        max_t = min(max_t, max(truth_mv.times))
-        print(f"Combined time range: {min_t} - {max_t}")
+        min_t_list.append(min(truth_mv.times))
+        max_t_list.append(max(truth_mv.times))
         
-    valid_indices = [i for i, t in enumerate(obs_times) if min_t <= t <= max_t]
-    filtered_times = [obs_times[i] for i in valid_indices]
-    print(f"Filtered to {len(filtered_times)} times.")
-    
+    movie_min_t = max(min_t_list)
+    movie_max_t = min(max_t_list)
+    print(f"Effective Movie time range: {movie_min_t:.3f} - {movie_max_t:.3f} h")
+
+    if movie_min_t > filtered_times.min() or movie_max_t < filtered_times.max():
+         print("Warning: Movie times do not span the whole duration of data. Extrapolation will be used.")
+
     return obs, filtered_times
 
 def process_frame_worker(t, movie, fov, npix):
@@ -123,7 +150,7 @@ def add_scale_bar(ax, fov, color='white'):
 def get_tb(frame_data):
     rf = frame_data['rf']
     psize = frame_data['psize']
-    return 3.254e13 / (rf**2 * psize**2) / 1e9
+    return 3.254e13 / (rf**2 * psize**2) / 1e10
 
 # --- Parallel Rendering Functions ---
 
@@ -182,17 +209,17 @@ def render_total_frame(args):
             # Column 0
             divider0 = make_axes_locatable(axes[i, 0])
             cax0 = divider0.append_axes("bottom", size="5%", pad=0.05)
-            fig.colorbar(im_tot, cax=cax0, orientation='horizontal', label='$T_B$ ($10^9$ K)')
+            fig.colorbar(im_tot, cax=cax0, orientation='horizontal', label='$T_B$ ($10^{10}$ K)')
             
             # Column 1
             divider1 = make_axes_locatable(axes[i, 1])
             cax1 = divider1.append_axes("bottom", size="5%", pad=0.05)
-            fig.colorbar(im_dyn, cax=cax1, orientation='horizontal', label='$T_B$ ($10^9$ K)')
+            fig.colorbar(im_dyn, cax=cax1, orientation='horizontal', label='$T_B$ ($10^{10}$ K)')
             
             # Column 2
             divider2 = make_axes_locatable(axes[i, 2])
             cax2 = divider2.append_axes("bottom", size="5%", pad=0.05)
-            fig.colorbar(im_stat, cax=cax2, orientation='horizontal', label='$T_B$ ($10^9$ K)')
+            fig.colorbar(im_stat, cax=cax2, orientation='horizontal', label='$T_B$ ($10^{10}$ K)')
             
     # Add scale bar to top-left panel
     add_scale_bar(axes[0, 0], fov)
@@ -302,12 +329,12 @@ def render_lp_frame(args):
              # Column 0: Tb (Total)
              divider0 = make_axes_locatable(axes[i, 0])
              cax0 = divider0.append_axes("bottom", size="5%", pad=0.05)
-             fig.colorbar(im_tot, cax=cax0, orientation='horizontal', label='$T_B$ ($10^9$ K)')
+             fig.colorbar(im_tot, cax=cax0, orientation='horizontal', label='$T_B$ ($10^{10}$ K)')
              
              # Column 1: Tb (Dynamic)
              divider1 = make_axes_locatable(axes[i, 1])
              cax1 = divider1.append_axes("bottom", size="5%", pad=0.05)
-             fig.colorbar(im_dyn, cax=cax1, orientation='horizontal', label='$T_B$ ($10^9$ K)')
+             fig.colorbar(im_dyn, cax=cax1, orientation='horizontal', label='$T_B$ ($10^{10}$ K)')
              
              # Column 2: |m| (Static)
              divider2 = make_axes_locatable(axes[i, 2])
@@ -445,6 +472,23 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
     has_truth = truth_data is not None
     if has_truth:
         t_vars = compute_variance_parallel(truth_data, UV, fov, npix, ncores)
+
+    # Save Variance Matrices
+    print("Saving Variance Matrices to .npy...")
+    # r_vars: [ (amp_I, phase_I), (amp_Q, phase_Q), ... ]
+    # pols order: I, Q, U, P
+    pols = ['I', 'Q', 'U', 'P']
+    
+    # Recon
+    for i, pol in enumerate(pols):
+        np.save(f"{outpath}_recon_amp_var_{pol}.npy", r_vars[i][0].reshape(npix, npix))
+        np.save(f"{outpath}_recon_phase_var_{pol}.npy", r_vars[i][1].reshape(npix, npix))
+        
+    # Truth
+    if has_truth:
+        for i, pol in enumerate(pols):
+            np.save(f"{outpath}_truth_amp_var_{pol}.npy", t_vars[i][0].reshape(npix, npix))
+            np.save(f"{outpath}_truth_phase_var_{pol}.npy", t_vars[i][1].reshape(npix, npix))
         
     if has_truth:
         nrows = 4
@@ -536,7 +580,7 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
         fig.colorbar(im, cax=cax)
 
     plt.tight_layout()
-    plt.savefig(f'{outpath}_var.png', bbox_inches='tight')
+    plt.savefig(f'{outpath}_visvar.png', bbox_inches='tight')
     plt.close(fig)
 
 
@@ -545,18 +589,22 @@ def main():
     
     obs = eh.obsdata.load_uvfits(args.data)
     
-    obs, times = process_obs_local(obs, args.input, args.truthmv)
+    obs, times = process_obs_local(obs, args.input, args.truthmv, args.tstart, args.tstop)
+    if times is None:
+        return
     
     npix = 160
     fov = 160 * eh.RADPERUAS
     
     recon_mv = eh.movie.load_hdf5(args.input)
+    recon_mv.reset_interp(bounds_error=False)
     recon_frames = process_movie_parallel(recon_mv, times, fov, npix, args.ncores)
     recon_frames = [f for f in recon_frames if f is not None]
     
     truth_frames = None
     if args.truthmv:
         truth_mv = eh.movie.load_hdf5(args.truthmv)
+        truth_mv.reset_interp(bounds_error=False)
         truth_frames = process_movie_parallel(truth_mv, times, fov, npix, args.ncores)
         truth_frames = [f for f in truth_frames if f is not None]
         

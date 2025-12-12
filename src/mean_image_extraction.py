@@ -1,4 +1,13 @@
+######################################################################
+# Author: Rohan Dahale, Date: 10 Dec 2025
+# Based on: Kotaro Moriyama's rex.py
+######################################################################
+
 import os
+import warnings
+
+# Suppress all warnings
+warnings.filterwarnings('ignore')
 
 # Set environment variables to single-threaded before importing numpy/scipy/ehtim
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -52,9 +61,15 @@ def extract_ring_quantites(image, xc=None, yc=None, rcutoff=5):
     
     # Gridding and interpolation
     x = np.arange(image.xdim) * image.psize / RADPERUAS
-    y = np.flip(np.arange(image.ydim) * image.psize / RADPERUAS)
+    # y must be strictly increasing for RectBivariateSpline
+    # Original code had y flipped (decreasing). 
+    # If z[0] corresponds to y_max, and we make y increasing (y_min to y_max),
+    # we must flip z along axis 0 so z[0] corresponds to y_min.
+    y = np.arange(image.ydim) * image.psize / RADPERUAS
     z = image.imarr()
-    f_image = interpolate.interp2d(x, y, z, kind="cubic")
+    z = np.flipud(z)
+    
+    f_image = interpolate.RectBivariateSpline(y, x, z)
 
     # Create a mesh grid in polar coordinates
     radial_imarr = np.zeros([Nr, Npa])
@@ -68,9 +83,9 @@ def extract_ring_quantites(image, xc=None, yc=None, rcutoff=5):
     x_grid = Rmesh * np.sin(PAradmesh) + xc
     y_grid = Rmesh * np.cos(PAradmesh) + yc
     
-    for r in range(Nr):
-        z_vals = [f_image(x_grid[i][r], y_grid[i][r]) for i in range(len(pa))]
-        radial_imarr[r, :] = np.array(z_vals)[:, 0]
+    # Vectorized interpolation
+    z_interp = f_image.ev(y_grid.flatten(), x_grid.flatten())
+    radial_imarr = z_interp.reshape(Npa, Nr).T
     radial_imarr = np.fliplr(radial_imarr)
 
     # Calculate the r_pk at each PA and average
@@ -267,26 +282,29 @@ def fit_ring(image, Nr=50, Npa=25, rmin_search=10, rmax_search=100, fov_search=0
 
 def make_polar_imarr(imarr, dx, xc=None, yc=None, rmax=50, Nr=50, Npa=180, kind="linear", image=None):
     nx, ny = imarr.shape
+    dy = dx
     x = np.arange(nx) * dx / RADPERUAS
-    y = np.arange(ny) * dx / RADPERUAS
+    y = np.arange(ny) * dy / RADPERUAS
     
     if xc is None or yc is None:
         xc, yc = fit_ring(image)
 
     z = imarr
-    f_image = interpolate.interp2d(x, y, z, kind=kind)
+    # f_image = interpolate.interp2d(x,y,z,kind=kind) # Deprecated
+    f_image = interpolate.RectBivariateSpline(y, x, z)
 
     radial_imarr = np.zeros([Nr, Npa])
     pa = np.linspace(0, 360, Npa)
     pa_rad = np.deg2rad(pa)
     radius = np.linspace(0, rmax, Nr)
+    dr = radius[-1] - radius[-2]
 
     Rmesh, PAradmesh = np.meshgrid(radius, pa_rad)
     x_grid, y_grid = Rmesh * np.sin(PAradmesh) + xc, Rmesh * np.cos(PAradmesh) + yc
     
-    for ir in range(Nr):
-        z_vals = [f_image(x_grid[ipa][ir], y_grid[ipa][ir]) for ipa in range(Npa)]
-        radial_imarr[ir, :] = z_vals[:]
+    # Vectorized
+    z_interp = f_image.ev(y_grid.flatten(), x_grid.flatten())
+    radial_imarr = z_interp.reshape(Npa, Nr).T
     radial_imarr = np.fliplr(radial_imarr)
 
     return radial_imarr, radius, pa
@@ -314,12 +332,22 @@ def extract_pol_quantites(im, xc=None, yc=None, blur_size=-1):
     V_radial, _, _ = make_polar_imarr(im.vvec.reshape(im.xdim, im.xdim), dx=im.psize, xc=xc, yc=yc, image=im)
     
     Pring, Vring, Vring2, Iring = 0, 0, 0, 0
-    for ir, ipa in itertools.product(range(len(radius)), range(len(pa))):
-        factor = radius[ir]
-        Pring += P_radial[ir, ipa] * np.exp(-2 * 1j * np.deg2rad(pa[ipa])) * factor
-        Vring2 += V_radial[ir, ipa] * np.exp(-2 * 1j * np.deg2rad(pa[ipa])) * factor
-        Vring += V_radial[ir, ipa] * np.exp(-1 * 1j * np.deg2rad(pa[ipa])) * factor
-        Iring += I_radial[ir, ipa] * factor
+    
+    # Vectorized integration
+    # pa is 1D, radius is 1D
+    # P_radial is (Nr, Npa)
+    
+    # Create grids for broadcasting
+    radius_grid = radius[:, np.newaxis]
+    pa_grid = pa[np.newaxis, :]
+    
+    exp_minus_2j = np.exp(-2 * 1j * np.deg2rad(pa_grid))
+    exp_minus_1j = np.exp(-1 * 1j * np.deg2rad(pa_grid))
+    
+    Pring = np.sum(P_radial * exp_minus_2j * radius_grid)
+    Vring2 = np.sum(V_radial * exp_minus_2j * radius_grid)
+    Vring = np.sum(V_radial * exp_minus_1j * radius_grid)
+    Iring = np.sum(I_radial * radius_grid)
         
     beta2 = Pring / Iring
     beta2_abs, beta2_angle = np.abs(beta2), np.rad2deg(np.angle(beta2))
@@ -371,7 +399,7 @@ def process_single_file(f):
 def main():
     parser = argparse.ArgumentParser(description="Extract mean image quantities from FITS files.")
     parser.add_argument('--fits', type=str, required=True, help='Path to FITS file or directory of FITS files')
-    parser.add_argument('-o', '--outpath', type=str, default='./output.csv', help='Output CSV file path')
+    parser.add_argument('-o', '--outpath', type=str, default='./output', help='Output CSV file path base (Without extension)')
     parser.add_argument('--ncores', type=int, default=32, help='Number of cores for parallel processing')
     args = parser.parse_args()
 
@@ -411,8 +439,8 @@ def main():
     
     # Save to CSV
     # All samples are saved as rows.
-    df.to_csv(outpath, index=False)
-    print(f"Saved results to {outpath}")
+    df.to_csv(outpath + "_mean_image_extraction.csv", index=False)
+    print(f"Saved results to {outpath}_mean_image_extraction.csv")
 
 if __name__ == "__main__":
     main()

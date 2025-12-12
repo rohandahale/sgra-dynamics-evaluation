@@ -45,6 +45,8 @@ def create_parser():
     p.add_argument('--truthmv', type=str, default=None, help='Truth HDF5 movie file (optional)')
     p.add_argument('--input', type=str, nargs='+', required=True, help='Glob pattern(s) or list of HDF5 model files')
     p.add_argument('-o', '--outpath', type=str, default='./rex', help='Output prefix (without extension)')
+    p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
+    p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('-n', '--ncores', type=int, default=32, help='Number of cores to use for parallel processing')
     return p
 
@@ -376,6 +378,7 @@ def process_movie(m_path, times):
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             mv = eh.movie.load_hdf5(m_path)
+            mv.reset_interp(bounds_error=False)
             
             # Average frame for center finding
             mv_ave = mv.avg_frame()
@@ -426,11 +429,33 @@ def main():
             obslist = obs.split_obs()
             
     obs_times = np.array([o.data['time'][0] for o in obslist])
+    data_min_t = obs_times.min()
+    data_max_t = obs_times.max()
+    print(f"Data time range: {data_min_t:.3f} - {data_max_t:.3f} h")
+
+    if args.tstart is not None or args.tstop is not None:
+        tstart = args.tstart if args.tstart is not None else data_min_t
+        tstop = args.tstop if args.tstop is not None else data_max_t
+        print(f"Time flagging data to use in range: {tstart:.3f} - {tstop:.3f} h")
+        
+        with open(os.devnull, 'w') as devnull:
+             with redirect_stdout(devnull), redirect_stderr(devnull):
+                 obs = obs.flag_UT_range(UT_start_hour=tstart, UT_stop_hour=tstop, output='flagged')
+                 obs.add_scans()
+                 obslist = obs.split_obs()
+        
+        if not obslist:
+            print("No data remaining after time flagging.")
+            return
+
+        obs_times = np.array([o.data['time'][0] for o in obslist])
+        print(f"New data time range: {obs_times.min():.3f} - {obs_times.max():.3f} h")
+
+    times = obs_times
     
     # Scan movies for time range
     min_t_list = []
     max_t_list = []
-    print("Scanning movies for time range...")
     with open(os.devnull, 'w') as devnull:
         with redirect_stdout(devnull), redirect_stderr(devnull):
             for m_path in input_files:
@@ -448,13 +473,14 @@ def main():
         print("No valid movies found.")
         return
 
-    min_t = max(min_t_list)
-    max_t = min(max_t_list)
+    movie_min_t = max(min_t_list)
+    movie_max_t = min(max_t_list)
+    print(f"Movie time range: {movie_min_t:.3f} - {movie_max_t:.3f} h")
+
+    if movie_min_t > times.min() or movie_max_t < times.max():
+         print("Warning: Movie times do not span the whole duration of data. Extrapolation will be used.")
     
-    valid_indices = np.where((obs_times >= min_t) & (obs_times <= max_t))[0]
-    times = obs_times[valid_indices]
-    
-    print(f"Processing {len(times)} time steps from {min_t} to {max_t}.")
+    print(f"Processing {len(times)} time steps.")
     
     # Process Truth Movie
     truth_results = None
@@ -618,7 +644,7 @@ def main():
             pass_percentages[metric] = pass_pct
             df[f'pass_percent_{metric}'] = pass_pct
 
-    csv_path = args.outpath + ".csv"
+    csv_path = args.outpath + "_rex.csv"
     df.to_csv(csv_path, index=False)
     print(f"Saved CSV to {csv_path}")
     
@@ -675,8 +701,8 @@ def main():
         a.legend()
         
     plt.tight_layout()
-    plt.savefig(args.outpath + '.png', bbox_inches='tight', dpi=300)
-    print(f"Saved plot to {args.outpath}.png")
+    plt.savefig(args.outpath + '_rex.png', bbox_inches='tight', dpi=300)
+    print(f"Saved plot to {args.outpath}_rex.png")
     
     # Pol Quantities (if available)
     if 'mnet_mean' in df.columns or 'mnet' in df.columns:
@@ -708,8 +734,8 @@ def main():
             a.legend()
             
         plt.tight_layout()
-        plt.savefig(args.outpath + '_pol.png', bbox_inches='tight', dpi=300)
-        print(f"Saved plot to {args.outpath}_pol.png")
+        plt.savefig(args.outpath + '_rex_pol.png', bbox_inches='tight', dpi=300)
+        print(f"Saved plot to {args.outpath}_rex_pol.png")
 
 if __name__ == "__main__":
     main()
