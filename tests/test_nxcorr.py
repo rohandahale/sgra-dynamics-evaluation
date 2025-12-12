@@ -12,9 +12,9 @@ def test_nxcorr():
     os.makedirs(data_dir, exist_ok=True)
     
     # Use relative paths for portability
-    uvfits_path = os.path.join(data_dir, 'crescent_LO_onsky.uvfits')
-    truth_path = os.path.join(data_dir, 'crescent_LO_onsky_truth.hdf5')
-    movie_path = os.path.join(data_dir, 'crescent_LO_onsky_truth.hdf5')
+    uvfits_path = os.path.join(data_dir, 'mring+hsCW_LO_onsky.uvfits')
+    truth_path = os.path.join(data_dir, 'mring+hsCW_LO_onsky_truth.hdf5')
+    movie_path = os.path.join(data_dir, 'mring+hsCW_LO_onsky_truth.hdf5')
     out_prefix = os.path.join(data_dir, 'test_nxcorr_output')
     
     # Run nxcorr.py
@@ -39,7 +39,7 @@ def test_nxcorr():
     
     # Check outputs for all modes (consolidated files)
     modes = ['total', 'static', 'dynamic']
-    pols = ['I', 'P', 'X']
+    pols = ['I', 'Pmag', 'X', 'Pvec']
     
     for mode in modes:
         csv_file = f"{out_prefix}_{mode}.csv"
@@ -58,7 +58,7 @@ def test_nxcorr():
             expected_cols = [
                 'time',
                 f'nxcorr_{pol}_mean', f'nxcorr_{pol}_std',
-                f'nxcorr_{pol}_thres_mean', f'nxcorr_{pol}_thres_std'
+                f'nxcorr_{pol}_thres'
             ]
             
             # pass_rate exists for total and dynamic modes, but not static
@@ -91,9 +91,9 @@ def test_nxcorr_single_movie():
     data_dir = os.path.join(base_dir, 'data')
     os.makedirs(data_dir, exist_ok=True)
     
-    uvfits_path = os.path.join(data_dir, 'crescent_LO_onsky.uvfits')
-    truth_path = os.path.join(data_dir, 'crescent_LO_onsky_truth.hdf5')
-    movie_path = os.path.join(data_dir, 'crescent_LO_onsky_truth.hdf5')
+    uvfits_path = os.path.join(data_dir, 'mring+hsCW_LO_onsky.uvfits')
+    truth_path = os.path.join(data_dir, 'mring+hsCW_LO_onsky_truth.hdf5')
+    movie_path = os.path.join(data_dir, 'mring+hsCW_LO_onsky_truth.hdf5')
     out_prefix = os.path.join(data_dir, 'test_nxcorr_single_output')
     
     script_path = os.path.join(base_dir, '../src/nxcorr.py')
@@ -117,7 +117,7 @@ def test_nxcorr_single_movie():
     
     # Check outputs
     modes = ['total', 'static', 'dynamic']
-    pols = ['I', 'P', 'X']
+    pols = ['I', 'Pmag', 'X', 'Pvec']
     
     for mode in modes:
         csv_file = f"{out_prefix}_{mode}.csv"

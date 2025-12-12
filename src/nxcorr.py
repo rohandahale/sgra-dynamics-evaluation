@@ -1,6 +1,7 @@
 ###################################################################################
 # Author: Rohan Dahale, Date: 10 December 2025
 # Discussions with: Marianna Foschi, Antonio Fuentes, Aviad Levis, Kotaro Moriyama
+# Istropy functions from: Joeseph Farah
 ###################################################################################
 
 import os
@@ -19,6 +20,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import numpy as np
 import pandas as pd
+import scipy
 import ehtim as eh
 import matplotlib.pyplot as plt
 import argparse
@@ -34,8 +36,6 @@ plt.rcParams["xtick.direction"] = "out"
 plt.rcParams["ytick.direction"] = "out"
 plt.rcParams["font.family"] = "sans-serif"
 
-# Import from utilities
-from utilities import isotropy_metric_normalized
 
 def create_parser():
     p = argparse.ArgumentParser()
@@ -45,6 +45,68 @@ def create_parser():
     p.add_argument('-o', '--outpath', type=str, default='./nxcorr', help='Output prefix (without extension)')
     p.add_argument('-n', '--ncores', type=int, default=32, help='Number of cores to use for parallel processing')
     return p
+
+def compute_ramesh_metric(us, vs, N=None):
+
+    if N is None:
+        N = len(us)
+
+    mean_u2 = np.sum([u**2. for u in us]) / (2.*N)
+    mean_v2 = np.sum([v**2. for v in vs]) / (2.*N)
+    mean_uv = np.sum([us[i]*vs[i] for i in range(len(us))]) / (2.*N)
+
+    numerator = np.sqrt( (mean_u2-mean_v2)**2. + 4*(mean_uv**2.) )
+    denominator = mean_u2 + mean_v2
+
+    return 1 - numerator / denominator
+
+def jensen_shannon_distance(p, q):
+    """
+    method to compute the Jenson-Shannon Distance
+    between two probability distributions
+    """
+
+    # convert the vectors into numpy arrays in case that they aren't
+    p = np.array(p)
+    q = np.array(q)
+
+    # calculate m
+    m = (p + q) / 2
+
+    # compute Jensen Shannon Divergence
+    divergence = (scipy.stats.entropy(p, m) + scipy.stats.entropy(q, m)) / 2
+
+    # compute the Jensen Shannon Distance
+    distance = np.sqrt(divergence)
+
+    return distance
+
+
+def radial_homogeneity(u, v):
+
+    uvdists = np.sqrt(u**2. + v**2.)
+
+    uvdists = sorted(uvdists)
+    uvdists = list(uvdists)
+    uvdists.append(1e10)
+    uvdists.append(0e10)
+    uvdists = np.array(uvdists)
+    score = jensen_shannon_distance(uvdists, [i*1.e10/len(uvdists) for i in range(len(uvdists))])
+    
+    return score
+
+
+
+def isotropy_metric_normalized(u, v, i_max=None, r_max=None):
+
+    if i_max is None or r_max is None: print("Please provide a value for both i_max and r_max.")
+
+    ## here we're just following the formula in the paper
+    iso = compute_ramesh_metric(u, v)
+    rad_hom = radial_homogeneity(u, v)
+
+    return (iso/i_max) * (1 - rad_hom/r_max)
+
 
 def get_weights(obs, input_files, times):
     """
@@ -141,43 +203,102 @@ def rotate_evpa(im, angle):
     im2.uvec = i * m * np.sin(2 * chi)
     return im2
 
-def compute_complex_cross_correlation(im_truth, im_recon, npix, fov, beam, truth_chi_rot=20, min_P_mask_frac=0.05):
+def pnxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
+    # 1. Regrid images
     imt = im_truth.regrid_image(fov, npix)
     imr = im_recon.regrid_image(fov, npix)
 
+    # 2. Construct Complex Polarization Vectors (P = Q + iU)
+    P_truth = imt.qvec.reshape(npix, npix) + 1j * imt.uvec.reshape(npix, npix)
+    P_recon = imr.qvec.reshape(npix, npix) + 1j * imr.uvec.reshape(npix, npix)
+
+    # 3. Compute Normalization Factor
+    norm_factor = np.sqrt(np.sum(np.abs(P_recon)**2)) * np.sqrt(np.sum(np.abs(P_truth)**2))
+    
+    if norm_factor == 0:
+        return 0.0, 0.0
+
+    # 4. FFT-based Cross-Correlation
+    f_truth = fft2(P_truth)
+    f_recon = fft2(P_recon)
+    
+    # Compute cross-correlation map
+    cc_map = ifft2(f_recon * np.conj(f_truth))
+    
+    # Normalize the map
+    nxcorr_map = cc_map / norm_factor
+
+    # 5. Determine Alignment
+    if shift is None:
+        # SEARCH MODE: Find the shift that maximizes the correlation magnitude
+        best_idx = np.unravel_index(np.argmax(np.abs(nxcorr_map)), nxcorr_map.shape)
+    else:
+        # NO SHIFT MODE: Use index (0,0) which corresponds to zero lag
+        best_idx = (0, 0)
+
+    # Extract the complex correlation at the determined index
+    max_complex_corr = nxcorr_map[best_idx]
+
+    # 6. Return the Real part (penalizes EVPA misalignment)
+    evpa_corr = np.real(max_complex_corr)
+    
+    # Threshold calculation 
+    chi_rot_rad = np.deg2rad(truth_chi_rot)
+    phase_threshold = np.cos(2 * chi_rot_rad)
+
+    return evpa_corr, phase_threshold
+
+def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20, min_P_mask_frac=0.05):
+    # Regrid images
+    imt = im_truth.regrid_image(fov, npix)
+    imr = im_recon.regrid_image(fov, npix)
+
+    # Q/U arrays
     Q_truth = imt.qvec.reshape(npix, npix)
     U_truth = imt.uvec.reshape(npix, npix)
     Q_recon = imr.qvec.reshape(npix, npix)
     U_recon = imr.uvec.reshape(npix, npix)
 
+    # Truth amplitude masking
     P_amp_truth = np.sqrt(Q_truth**2 + U_truth**2)
     P_peak = np.max(P_amp_truth)
     mask = P_amp_truth >= (P_peak * min_P_mask_frac)
+    
+    # EVPA decomposition
     zeta_truth = 0.5 * np.arctan2(U_truth, Q_truth)
     zeta_recon = 0.5 * np.arctan2(U_recon, Q_recon)
     Pdir_truth = np.exp(1j * 2 * zeta_truth) * mask
-    Pdir_recon = np.exp(1j * 2 * zeta_recon) #* mask # mask is not used here
+    Pdir_recon = np.exp(1j * 2 * zeta_recon) # mask is not used here for recon
 
-    C_corr = ifft2(fft2(Pdir_truth) * np.conj(fft2(Pdir_recon)))
-    C_corr = fftshift(C_corr)
+    # FFT-based Cross-Correlation
+    C_corr = ifft2(fft2(Pdir_recon) * np.conj(fft2(Pdir_truth)))
 
     norm_factor = np.sum(mask)
-    C_corr /= norm_factor
+    if norm_factor > 0:
+        C_corr /= norm_factor
 
-    absC = np.abs(C_corr)
-    max_idx = np.unravel_index(np.argmax(absC), absC.shape)
-    max_C = C_corr[max_idx]
+    if shift is None:
+        # SEARCH MODE
+        absC = np.abs(C_corr)
+        best_idx = np.unravel_index(np.argmax(absC), absC.shape)
+    else:
+        # NO SHIFT MODE (Zero lag at 0,0)
+        best_idx = (0, 0)
 
+    max_C = C_corr[best_idx]
+    
     evpa_corr = np.real(max_C)
     chi_rot_rad = np.deg2rad(truth_chi_rot)
     phase_threshold = np.cos(2 * chi_rot_rad)
 
     return evpa_corr, phase_threshold
 
+
 def get_nxcorr_cri_beam(im, beam, pol='I'):
     im_blur = im.blur_gauss(beam, frac=1.0, frac_pol=1.0)
     nxcorr_cri = im.compare_images(im_blur, pol=pol, metric=['nxcorr'])[0][0]
     return nxcorr_cri
+
 
 def process_frame(args_tuple):
     imt, im, beam, npix, fov, pol, shift = args_tuple
@@ -187,7 +308,7 @@ def process_frame(args_tuple):
         else:
             nxcorr = imt.compare_images(im, pol=pol, metric=['nxcorr'])[0][0]
         threshold = get_nxcorr_cri_beam(imt, beam, pol='I')
-    elif pol == 'P':
+    elif pol == 'Pmag':
         im2 = im.copy()
         imt2 = imt.copy()
         im2.ivec = np.sqrt(im2.qvec**2 + im2.uvec**2)
@@ -197,8 +318,17 @@ def process_frame(args_tuple):
         else:
             nxcorr = imt2.compare_images(im2, pol='I', metric=['nxcorr'])[0][0]
         threshold = get_nxcorr_cri_beam(imt2, beam, pol='I')
+    elif pol == 'Pvec':
+        if shift is not None:
+            nxcorr, threshold = pnxcorr(imt, im, npix, fov, beam, shift=shift)
+        else:
+            nxcorr, threshold = pnxcorr(imt, im, npix, fov, beam)
     elif pol == 'X':
-        nxcorr, threshold = compute_complex_cross_correlation(imt, im, npix, fov, beam)
+        if shift is not None:
+            nxcorr, threshold = enxcorr(imt, im, npix, fov, beam, shift=shift)
+        else:
+            nxcorr, threshold = enxcorr(imt, im, npix, fov, beam)
+
     else:
         raise ValueError(f"Invalid polarization: {pol}")
     return nxcorr, threshold
@@ -291,7 +421,7 @@ def process_movie_nxcorr(m_path, mvt, times, obslist_t, npix, fov, pol, mode, w_
 
             if pol == 'I':
                 w_ratio = w_norm['I'] / np.max(w_norm['I'])
-            elif pol in ['P', 'X']:
+            elif pol in ['Pmag', 'X', 'Pvec']:
                 w_QU = (w_norm['Q'] + w_norm['U']) / 2
                 w_ratio = w_QU / np.max(w_QU)
             else:
@@ -319,13 +449,15 @@ def process_movie_nxcorr(m_path, mvt, times, obslist_t, npix, fov, pol, mode, w_
 
 def save_and_plot(times, all_metrics_data, mode, outpath, is_bayesian):
     """
-    Save consolidated CSV and create 3-panel plot (I, P, X).
+    Save consolidated CSV and create 4-panel plot (I, Pmag, X, Pvec).
     all_metrics_data: dict {pol: metrics_data_list}
     """
     results = {'time': times}
     
     # Process each polarization
-    for pol in ['I', 'P', 'X']:
+    pols_to_plot = ['I', 'Pmag', 'X', 'Pvec']
+    
+    for pol in pols_to_plot:
         if pol not in all_metrics_data:
             continue
             
@@ -336,12 +468,13 @@ def save_and_plot(times, all_metrics_data, mode, outpath, is_bayesian):
         if is_bayesian:
             results[f'nxcorr_{pol}_mean'] = np.mean(all_nxcorr, axis=0)
             results[f'nxcorr_{pol}_std'] = np.std(all_nxcorr, axis=0)
-            results[f'nxcorr_{pol}_thres_mean'] = np.mean(all_thres, axis=0)
-            results[f'nxcorr_{pol}_thres_std'] = np.std(all_thres, axis=0)
+            # Threshold is const, use mean
+            results[f'nxcorr_{pol}_thres'] = np.mean(all_thres, axis=0)
             
             if mode != 'static':
                 # Pass if (mean + std) > threshold
-                pass_condition = (results[f'nxcorr_{pol}_mean'] + results[f'nxcorr_{pol}_std']) > results[f'nxcorr_{pol}_thres_mean']
+                # User request: "any part of errorbar above threshold is a pass"
+                pass_condition = (results[f'nxcorr_{pol}_mean'] + results[f'nxcorr_{pol}_std']) > results[f'nxcorr_{pol}_thres']
                 pass_rate = (np.sum(pass_condition) / len(times)) * 100
                 results[f'pass_rate_{pol}'] = np.full(len(times), pass_rate)
         else:
@@ -357,25 +490,27 @@ def save_and_plot(times, all_metrics_data, mode, outpath, is_bayesian):
     print(f"Saved CSV to {csv_path}")
     
     # Plot
-    fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(21, 5), sharex=True)
+    fig, axes = plt.subplots(nrows=1, ncols=4, figsize=(28, 5), sharex=True)
     
     color = 'tab:blue'
     
-    for i, pol in enumerate(['I', 'P', 'X']):
+    for i, pol in enumerate(pols_to_plot):
         ax = axes[i]
         ax.set_ylabel(f'nxcorr ({pol})')
         ax.set_xlabel('Time (UTC)')
         
         if pol not in all_metrics_data:
+            ax.text(0.5, 0.5, 'N/A', ha='center', va='center', transform=ax.transAxes)
             continue
             
         if is_bayesian:
             ax.errorbar(times, results[f'nxcorr_{pol}_mean'], 
                        yerr=results[f'nxcorr_{pol}_std'], 
                        fmt='-o', label='Mean', color=color, capsize=3, alpha=0.8)
-            ax.errorbar(times, results[f'nxcorr_{pol}_thres_mean'], 
-                       yerr=results[f'nxcorr_{pol}_thres_std'], 
-                       fmt='--', label='Threshold', color='black', capsize=3, alpha=0.6)
+            # Threshold as simple line
+            ax.plot(times, results[f'nxcorr_{pol}_thres'], 
+                       '--', label='Threshold', color='black', alpha=0.6)
+            
             if mode != 'static':
                 pass_str = f"Pass: {results[f'pass_rate_{pol}'][0]:.1f}%"
                 ax.plot([], [], ' ', label=pass_str)
@@ -448,7 +583,7 @@ def main():
         
         all_metrics_data = {}
         
-        for pol in ['I', 'P', 'X']:
+        for pol in ['I', 'Pmag', 'X', 'Pvec']:
             print(f"  Processing polarization: {pol}")
             metrics_data = []
             process_func = functools.partial(process_movie_nxcorr, 
