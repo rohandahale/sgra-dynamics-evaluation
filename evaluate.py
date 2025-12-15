@@ -227,8 +227,8 @@ def main():
 
         # e) Pattern Speed
         if config['run_steps']['patternspeed']:
-            if not overwrite and os.path.exists(f"{out_prefix}_pattern_speed_summary.png"):
-                print(f"Skipping Pattern Speed: Output {out_prefix}_pattern_speed_summary.png already exists.")
+            if not overwrite and os.path.exists(f"{out_prefix}_patternspeed_summary.png"):
+                print(f"Skipping Pattern Speed: Output {out_prefix}_patternspeed_summary.png already exists.")
             else:
                 cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=True)
                 run_command(cmd, "Pattern Speed")

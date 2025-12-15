@@ -252,11 +252,13 @@ def process_single_file(m_path, times, min_t, max_t, npix, fov, blur,
                 dyn_movie.save_hdf5(dynamic_out)
     
     ######################################################################
-    # 4. Create time-uniform HDF5 (100 frames uniformly sampled)
+    # 4. Create time-uniform HDF5 (frames every minute)
     ######################################################################
     if not os.path.exists(uniform_out):
-        ntimes = 100
-        uniform_times = np.linspace(min_t, max_t, ntimes)
+        # Time stamps every minute
+        step_hr = 1.0/60.0
+        uniform_times = np.arange(min_t, max_t + 1e-5, step_hr)
+        ntimes = len(uniform_times)
         
         frame_list = []
         for t in uniform_times:

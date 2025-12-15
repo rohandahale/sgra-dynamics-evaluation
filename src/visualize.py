@@ -548,6 +548,11 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
                 
             im = ax.imshow(data.reshape(npix, npix), cmap=cmap, extent=extent, origin='lower', vmin=0, vmax=vmax)
             
+            # Add max value text
+            current_max = np.max(data)
+            ax.text(0.95, 0.95, f"max: {current_max:.2f}", transform=ax.transAxes,
+                    ha='right', va='top', color='red', fontsize=14)
+            
             if i == 0:
                 ax.set_title(col_names[j], fontsize=18)
             if j == 0:
