@@ -1,0 +1,234 @@
+import os
+import sys
+import yaml
+import argparse
+import subprocess
+import shutil
+import time
+import gc
+from glob import glob
+
+def load_config(config_path):
+    with open(config_path, 'r') as file:
+        return yaml.safe_load(file)
+
+def run_command(cmd, description):
+    print(f"\n--- Running {description} ---")
+    print("Command:", " ".join(cmd))
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"{description} completed successfully.")
+        # Cleanup
+        gc.collect()
+        time.sleep(5)
+    except subprocess.CalledProcessError as e:
+        print(f"{description} failed with error code {e.returncode}.")
+
+def main():
+    parser = argparse.ArgumentParser(description="Driver script for Sgr A* Dynamics Evaluation")
+    parser.add_argument('config', nargs='?', default='params.yml', help='Path to params.yml configuration file')
+    args = parser.parse_args()
+
+    # Load Configuration
+    if not os.path.exists(args.config):
+        print(f"Error: Configuration file '{args.config}' not found.")
+        sys.exit(1)
+        
+    config = load_config(args.config)
+    
+    # Setup Paths
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    src_dir = os.path.join(base_dir, 'src')
+    
+    submission_dir = config['submission_dir']
+    results_dir = config['results_dir']
+    
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+
+    # Copy config file to results directory
+    shutil.copy(args.config, os.path.join(results_dir, 'params.yml'))
+        
+    # Parameters (Single Choice where applicable)
+    models = config['models']
+    data_band = config['data_band']
+    scattering = config['scattering']
+    recon_band = config['recon_band']
+    pipeline = config['pipeline']
+    is_bayesian = config['is_bayesian']
+    
+    ncores = str(config['ncores'])
+    
+    # Optional Time Range
+    tstart = config.get('tstart') 
+    tstop = config.get('tstop')
+    
+    # Iterate over Models only (other params are fixed for this run)
+    for model in models:
+        print(f"\n{'='*80}")
+        print(f"Processing: Model={model}, Pipeline={pipeline} (Bayesian={is_bayesian})")
+        print(f"Params: Data Band={data_band}, Recon Band={recon_band}, Scattering={scattering}")
+        print(f"{'='*80}")
+        
+        # 1. Define Output Directory
+        # "Outpath is <results_dir>/<model>_<pipeline>"
+        out_prefix = os.path.join(results_dir, f"{model}_{pipeline}")
+        
+        # 2. File Paths construction
+        
+        # Data File
+        data_fname = config['data_format'].format(
+            model=model, 
+            data_band=data_band, 
+            scattering=scattering
+        )
+        data_path = os.path.join(submission_dir, data_fname)
+        
+        # Truth File
+        truth_fname = config['truth_format'].format(
+            model=model, 
+            data_band=data_band, 
+            scattering=scattering
+        )
+        truth_path = os.path.join(submission_dir, truth_fname)
+        
+        # Reconstruction Files
+        input_arg = None
+        visualize_input = None
+        
+        if is_bayesian:
+            # Bayesian Mode
+            recon_fname_bayes_glob = config['recon_format_bayesian'].format(
+                model=model, 
+                recon_band=recon_band, 
+                scattering=scattering, 
+                pipeline=pipeline
+            )
+            recon_path_bayes_glob = os.path.join(submission_dir, recon_fname_bayes_glob)
+            
+            # Check for matches
+            matched_files = glob(recon_path_bayes_glob)
+            if not matched_files:
+                print(f"Skipping: No Bayesian input files found matching: {recon_path_bayes_glob}")
+                continue
+                
+            input_arg = matched_files
+            print(f"Found {len(matched_files)} Bayesian input files.")
+            
+            # For visualize, we need the mean file
+            recon_fname_bayes_mean = config['recon_format_bayesian_mean'].format(
+                model=model, 
+                recon_band=recon_band, 
+                scattering=scattering, 
+                pipeline=pipeline
+            )
+            recon_path_bayes_mean = os.path.join(submission_dir, recon_fname_bayes_mean)
+            
+            if os.path.exists(recon_path_bayes_mean):
+                visualize_input = recon_path_bayes_mean
+            else:
+                print(f"Warning: Mean file for Bayesian reconstruction not found: {recon_path_bayes_mean}")
+                visualize_input = None
+                
+        else:
+            # Non-Bayesian Mode
+            recon_fname_non_bayes = config['recon_format_non_bayesian'].format(
+                model=model, 
+                recon_band=recon_band, 
+                scattering=scattering, 
+                pipeline=pipeline
+            )
+            recon_path_non_bayes = os.path.join(submission_dir, recon_fname_non_bayes)
+            
+            if not os.path.exists(recon_path_non_bayes):
+                print(f"Skipping: Non-Bayesian input file not found: {recon_path_non_bayes}")
+                continue
+                
+            input_arg = [recon_path_non_bayes]
+            visualize_input = recon_path_non_bayes # Visualize uses the single recon file
+            print(f"Found Non-Bayesian input: {recon_path_non_bayes}")
+
+        if not os.path.exists(data_path):
+             print(f"Skipping: Data file not found: {data_path}")
+             continue
+             
+        # 3. Execution
+        
+        # Helper to build basic command
+        def build_cmd(script_name, input_val, output_val, use_truth=True, extra_args=[]):
+            script_path = os.path.join(src_dir, script_name)
+            cmd = ['python', script_path, 
+                   '-d', data_path, 
+                   '-n', ncores]
+            
+            if script_name in ['visualize.py', 'patternspeed.py']:
+                flag = '-i'
+            else:
+                flag = '--input'
+            
+            cmd.append(flag)
+            if isinstance(input_val, list):
+                cmd.extend(input_val)
+            else:
+                cmd.append(input_val)
+                
+            cmd.extend(['-o', output_val])
+            
+            if use_truth:
+                cmd.extend(['--truthmv', truth_path])
+                
+            if tstart is not None:
+                cmd.extend(['--tstart', str(tstart)])
+            if tstop is not None:
+                cmd.extend(['--tstop', str(tstop)])
+                
+            cmd.extend(extra_args)
+            return cmd
+
+        # a) Preprocess HDF5
+        if config['run_steps']['preprocess_hdf5']:
+            cmd = ['python', os.path.join(src_dir, 'preprocess_hdf5.py'),
+                   '-d', data_path,
+                   '--input'] + input_arg + [
+                   '-o', out_prefix,
+                   '-n', ncores]
+            if tstart is not None: cmd.extend(['--tstart', str(tstart)])
+            if tstop is not None: cmd.extend(['--tstop', str(tstop)])
+            
+            run_command(cmd, "Preprocess HDF5")
+
+        # b) Chisq
+        if config['run_steps']['chisq']:
+            cmd = build_cmd('chisq.py', input_arg, out_prefix, use_truth=False) 
+            run_command(cmd, "Chi-Squared")
+
+        # c) Hotspot
+        if config['run_steps']['hotspot']:
+            cmd = build_cmd('hotspot.py', input_arg, out_prefix, use_truth=True)
+            run_command(cmd, "Hotspot Feature Extraction")
+
+        # d) Nxcorr
+        if config['run_steps']['nxcorr']:
+            cmd = build_cmd('nxcorr.py', input_arg, out_prefix, use_truth=True)
+            run_command(cmd, "Nxcorr Analysis")
+
+        # e) Pattern Speed
+        if config['run_steps']['patternspeed']:
+            cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=True)
+            run_command(cmd, "Pattern Speed")
+            
+        # f) Rex
+        if config['run_steps']['rex']:
+             cmd = build_cmd('rex.py', input_arg, out_prefix, use_truth=True)
+             run_command(cmd, "Ring Extraction (REx)")
+             
+        # g) Visualize
+        if config['run_steps']['vizualize']:
+            if visualize_input:
+                cmd = build_cmd('visualize.py', visualize_input, out_prefix, use_truth=True)
+                run_command(cmd, "Visualization")
+            else:
+                print("Skipping Visualization: No valid input file (Mean file missing for Bayesian?).")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,103 @@
+# Evaluation Parameters
+
+# 1. Directories
+submission_dir: "/home/share/SgrA_Dynamics/evaluation/april11/20251006_final/resolve/submissions"
+results_dir: "/home/share/SgrA_Dynamics/evaluation/april11/20251006_final/resolve/results"
+
+# 2. Computational Resources
+ncores: 32
+
+# 2b. Time Range (in UT hours)
+# Set to null to use the full range of the data
+tstart: null
+tstop: null
+
+# 3. Models to evaluate (List)
+#   - "J1924-2914"
+#   - "SGRA"
+#   - "crescent"
+#   - "crescent-inoisy"
+#   - "disk"
+#   - "double"
+#   - "edisk"
+#   - "grmhd1"
+#   - "grmhd2"
+#   - "grmhd2+hs1"
+#   - "grmhd2+hs2"
+#   - "grmhd3"
+#   - "grmhd4"
+#   - "grmhd5"
+#   - "grmhd6"
+#   - "grmhd7"
+#   - "grmhd8"
+#   - "mring+hs-cross"
+#   - "mring+hs-incoh"
+#   - "mring+hs-incohv2"
+#   - "mring+hs-lensed"
+#   - "mring+hs-not-center"
+#   - "mring+hs-off-ring"
+#   - "mring+hs-out"
+#   - "mring+hs-pol"
+#   - "mring+hsCCW"
+#   - "mring+hsCCW20"
+#   - "mring+hsCW"
+#   - "mring+hsCW0.15"
+#   - "mring+hsCW0.60"
+#   - "mring+hsCW1.20"
+#   - "mring+hsCW20"
+#   - "mring+hsCW40"
+#   - "mring-varbeta2"
+#   - "point"
+#   - "ring"
+models:
+  - "crescent"
+  - "grmhd2"
+  - "mring+hsCW"
+
+# 4. Data Band (Single Choice: LO, HI, LO+HI)
+data_band: "LO"
+
+# 5. Scattering (Single Choice: onsky, dsct, deblur)
+scattering: "onsky"
+
+# 6. Data File Format
+# Format: <submission_dir>/<model>_<data_band>_<scattering>.uvfits
+data_format: "{model}_{data_band}_{scattering}.uvfits"
+
+# 7. Reconstruction Band (Single Choice: LO, HI, LO+HI)
+recon_band: "LO+HI"
+
+# 8. Pipeline (Single Choice: kine, resolve, ehtim, doghit, ngmem, modeling)
+pipeline: "resolve"
+
+# 8b. Is the pipeline Bayesian? (True/False)
+is_bayesian: True
+
+# 9. Non-Bayesian Reconstruction File Format
+# Format: <submission_dir>/<model>_<recon_band>_<scattering>_<pipeline>.hdf5
+recon_format_non_bayesian: "{model}_{recon_band}_{scattering}_{pipeline}.hdf5"
+
+# 10. Bayesian Reconstruction File Format (Glob pattern)
+# Format: <submission_dir>/<model>_<recon_band>_<scattering>_<pipeline>_0*
+recon_format_bayesian: "{model}_{recon_band}_{scattering}_{pipeline}_0*"
+
+# 11. Bayesian Mean Reconstruction File Format (Needed for Visualize)
+# Format: <submission_dir>/<model>_<recon_band>_<scattering>_<pipeline>_mean.hdf5
+recon_format_bayesian_mean: "{model}_{recon_band}_{scattering}_{pipeline}_mean.hdf5"
+
+# 12. Truth File Format
+# Format: <submission_dir>/<model>_<data_band>_<scattering>_truth.hdf5
+truth_format: "{model}_{data_band}_{scattering}_truth.hdf5"
+
+# 13. Output Path
+# The script will create: <results_dir>/<model>_<pipeline>
+
+# 14. Evaluation Steps (True/False)
+run_steps:
+  preprocess_hdf5: True
+  chisq: True
+  hotspot: True
+  nxcorr: True
+  patternspeed: True
+  rex: True
+  vizualize: True

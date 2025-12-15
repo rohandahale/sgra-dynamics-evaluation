@@ -31,14 +31,11 @@ import matplotlib as mpl
 warnings.filterwarnings('ignore')
 
 
-# Plotting style
-mpl.rcParams['figure.dpi'] = 300
+# Set plot style
 plt.rcParams["xtick.direction"] = "out"
 plt.rcParams["ytick.direction"] = "out"
-mpl.rcParams["axes.labelsize"] = 20
-mpl.rcParams["xtick.labelsize"] = 18
-mpl.rcParams["ytick.labelsize"] = 18
-mpl.rcParams["legend.fontsize"] = 18
+plt.rcParams["font.family"] = "sans-serif"
+mpl.rcParams['figure.dpi'] = 300
 
 def create_parser():
     p = argparse.ArgumentParser()
