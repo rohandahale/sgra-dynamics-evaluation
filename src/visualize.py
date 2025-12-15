@@ -39,7 +39,7 @@ def create_parser():
     p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
     p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('--fps', type=int, default=10, help='Frames per second for GIFs.')
-    p.add_argument('--ncores', type=int, default=16, help='Number of cores for parallel processing.')
+    p.add_argument('-n', '--ncores', type=int, default=16, help='Number of cores for parallel processing.')
     return p
 
 def process_obs_local(obs, recon_path, truth_path=None, tstart=None, tstop=None):

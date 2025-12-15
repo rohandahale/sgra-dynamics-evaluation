@@ -12,6 +12,9 @@ ncores: 32
 tstart: null
 tstop: null
 
+# 2c. Overwrite existing results (True/False)
+overwrite: False
+
 # 3. Models to evaluate (List)
 #   - "J1924-2914"
 #   - "SGRA"

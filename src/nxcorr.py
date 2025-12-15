@@ -232,7 +232,7 @@ def pnxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
 
     return evpa_corr, phase_threshold
 
-def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20, min_P_mask_frac=0.05):
+def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
     # Regrid images
     imt = im_truth.regrid_image(fov, npix)
     imr = im_recon.regrid_image(fov, npix)
@@ -243,23 +243,44 @@ def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20, m
     Q_recon = imr.qvec.reshape(npix, npix)
     U_recon = imr.uvec.reshape(npix, npix)
 
-    # Truth amplitude masking
-    P_amp_truth = np.sqrt(Q_truth**2 + U_truth**2)
-    P_peak = np.max(P_amp_truth)
-    mask = P_amp_truth >= (P_peak * min_P_mask_frac)
-    
     # EVPA decomposition
     zeta_truth = 0.5 * np.arctan2(U_truth, Q_truth)
     zeta_recon = 0.5 * np.arctan2(U_recon, Q_recon)
-    Pdir_truth = np.exp(1j * 2 * zeta_truth) * mask
-    Pdir_recon = np.exp(1j * 2 * zeta_recon) # mask is not used here for recon
 
-    # FFT-based Cross-Correlation
-    C_corr = ifft2(fft2(Pdir_recon) * np.conj(fft2(Pdir_truth)))
+    Pdir_truth = np.exp(1j * 2 * zeta_truth)
+    Pdir_recon = np.exp(1j * 2 * zeta_recon)
 
-    norm_factor = np.sum(mask)
-    if norm_factor > 0:
-        C_corr /= norm_factor
+    # --- Implement Pearson Correlation ---
+
+    # 1. Center the Truth Phasors
+    # Calculate Mean of Truth
+    mean_truth = np.mean(Pdir_truth)
+    
+    # Subtract mean
+    Pdir_truth_centered = Pdir_truth - mean_truth
+
+    # 2. Center the Recon Phasors
+    # Calculate Global Mean of Recon
+    mean_recon = np.mean(Pdir_recon)
+    # Subtract mean
+    Pdir_recon_centered = Pdir_recon - mean_recon
+
+    # 3. FFT-based Cross-Correlation (Numerator: Covariance)
+    C_corr = ifft2(fft2(Pdir_recon_centered) * np.conj(fft2(Pdir_truth_centered)))
+
+    # 4. Normalization (Denominator: Sigma_T * Sigma_R)
+    # Variance sum for Truth
+    var_sum_truth = np.sum(np.abs(Pdir_truth_centered)**2)
+
+    # Variance sum for Recon
+    var_sum_recon = np.sum(np.abs(Pdir_recon_centered)**2)
+    
+    denom = np.sqrt(var_sum_truth) * np.sqrt(var_sum_recon)
+
+    if denom > 0:
+        C_corr /= denom
+    else:
+        C_corr[:] = 0.0
 
     if shift is None:
         # SEARCH MODE

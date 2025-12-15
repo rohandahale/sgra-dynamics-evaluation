@@ -63,6 +63,9 @@ def main():
     tstart = config.get('tstart') 
     tstop = config.get('tstop')
     
+    # Overwrite Flag
+    overwrite = config.get('overwrite', False)
+
     # Iterate over Models only (other params are fixed for this run)
     for model in models:
         print(f"\n{'='*80}")
@@ -199,36 +202,55 @@ def main():
 
         # b) Chisq
         if config['run_steps']['chisq']:
-            cmd = build_cmd('chisq.py', input_arg, out_prefix, use_truth=False) 
-            run_command(cmd, "Chi-Squared")
+            if not overwrite and os.path.exists(f"{out_prefix}_chisq.csv"):
+                print(f"Skipping Chi-Squared: Output {out_prefix}_chisq.csv already exists.")
+            else:
+                cmd = build_cmd('chisq.py', input_arg, out_prefix, use_truth=False) 
+                run_command(cmd, "Chi-Squared")
 
         # c) Hotspot
         if config['run_steps']['hotspot']:
-            cmd = build_cmd('hotspot.py', input_arg, out_prefix, use_truth=True)
-            run_command(cmd, "Hotspot Feature Extraction")
+            if not overwrite and os.path.exists(f"{out_prefix}_hotspot.csv"):
+                print(f"Skipping Hotspot: Output {out_prefix}_hotspot.csv already exists.")
+            else:
+                cmd = build_cmd('hotspot.py', input_arg, out_prefix, use_truth=True)
+                run_command(cmd, "Hotspot Feature Extraction")
 
         # d) Nxcorr
         if config['run_steps']['nxcorr']:
-            cmd = build_cmd('nxcorr.py', input_arg, out_prefix, use_truth=True)
-            run_command(cmd, "Nxcorr Analysis")
+            # Check for any of the expected outputs, e.g. total mode
+            if not overwrite and os.path.exists(f"{out_prefix}_total_nxcorr.csv"):
+                print(f"Skipping Nxcorr: Output {out_prefix}_total_nxcorr.csv already exists.")
+            else:
+                cmd = build_cmd('nxcorr.py', input_arg, out_prefix, use_truth=True)
+                run_command(cmd, "Nxcorr Analysis")
 
         # e) Pattern Speed
         if config['run_steps']['patternspeed']:
-            cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=True)
-            run_command(cmd, "Pattern Speed")
+            if not overwrite and os.path.exists(f"{out_prefix}_pattern_speed_summary.png"):
+                print(f"Skipping Pattern Speed: Output {out_prefix}_pattern_speed_summary.png already exists.")
+            else:
+                cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=True)
+                run_command(cmd, "Pattern Speed")
             
         # f) Rex
         if config['run_steps']['rex']:
-             cmd = build_cmd('rex.py', input_arg, out_prefix, use_truth=True)
-             run_command(cmd, "Ring Extraction (REx)")
+             if not overwrite and os.path.exists(f"{out_prefix}_rex.csv"):
+                 print(f"Skipping REx: Output {out_prefix}_rex.csv already exists.")
+             else:
+                 cmd = build_cmd('rex.py', input_arg, out_prefix, use_truth=True)
+                 run_command(cmd, "Ring Extraction (REx)")
              
         # g) Visualize
         if config['run_steps']['vizualize']:
-            if visualize_input:
-                cmd = build_cmd('visualize.py', visualize_input, out_prefix, use_truth=True)
-                run_command(cmd, "Visualization")
+            if not overwrite and os.path.exists(f"{out_prefix}_total.gif") and os.path.exists(f"{out_prefix}_lp.gif"):
+                print(f"Skipping Visualization: GIFs already exist.")
             else:
-                print("Skipping Visualization: No valid input file (Mean file missing for Bayesian?).")
+                if visualize_input:
+                    cmd = build_cmd('visualize.py', visualize_input, out_prefix, use_truth=True)
+                    run_command(cmd, "Visualization")
+                else:
+                    print("Skipping Visualization: No valid input file (Mean file missing for Bayesian?).")
 
 if __name__ == "__main__":
     main()

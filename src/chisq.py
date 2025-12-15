@@ -41,9 +41,10 @@ def create_parser():
     p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
     p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('-n', '--ncores', type=int, default=32, help='Number of cores to use for parallel processing')
+    p.add_argument('--no_flag_aa_ap', action='store_true', help='Do NOT flag AA and AP baselines')
     return p
 
-def process_movie(m_path, obslist_t, times):
+def process_movie(m_path, obslist_t, times, no_flag_aa_ap=False):
     """
     Process a single movie file to calculate chi-squared metrics.
     """
@@ -63,7 +64,8 @@ def process_movie(m_path, obslist_t, times):
                 current_obs = obslist_t[i]
 
                 #flag short baselines before forming closure quantities
-                current_obs = current_obs.flag_bl(["AA", "AP"])
+                if not no_flag_aa_ap:
+                    current_obs = current_obs.flag_bl(["AA", "AP"])
                 
                 # Flag sites for specific metrics (JC for polchisq)
                 current_obs_pol = current_obs.flag_sites(['JC'])
@@ -185,7 +187,7 @@ def main():
     
     # We pass obslist_t and times to all workers.
     # functools.partial can fix these arguments.
-    process_func = functools.partial(process_movie, obslist_t=obslist_t, times=times)
+    process_func = functools.partial(process_movie, obslist_t=obslist_t, times=times, no_flag_aa_ap=args.no_flag_aa_ap)
     
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         results_gen = executor.map(process_func, input_files)
