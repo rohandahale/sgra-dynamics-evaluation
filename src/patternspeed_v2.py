@@ -354,7 +354,7 @@ def lower_xicrit_threshold(racf, xi_crit, non_zero_columns, non_zero_rows):
   # Count non-zero rows and columns
   non_zero_columns = np.count_nonzero(np.sum(Q, axis=0))
   non_zero_rows = np.count_nonzero(np.sum(Q, axis=1))
-  print('~~~a) Old Col & Row Nums:', non_zero_columns, non_zero_rows, '. old xi_Crit:', xi_crit)
+  #print('~~~a) Old Col & Row Nums:', non_zero_columns, non_zero_rows, '. old xi_Crit:', xi_crit)
 
   # Lower threshold further if necessary. 
   if non_zero_columns < min_required_columns or non_zero_rows < min_required_rows:
@@ -385,7 +385,7 @@ def lower_xicrit_threshold(racf, xi_crit, non_zero_columns, non_zero_rows):
         non_zero_rows = non_zero_rows_cand
         break # Found valid region
 
-  print('~~~b) New Col & Row Nums:', non_zero_columns, non_zero_rows, '. new xi_Crit:', xi_crit)
+  #print('~~~b) New Col & Row Nums:', non_zero_columns, non_zero_rows, '. new xi_Crit:', xi_crit)
   return xi_crit, Q
 
 def sample_cylinder(sIall, ring_params, dx, x_shift=0, y_shift=0, r_shift=0):
@@ -483,11 +483,12 @@ def compute_autocorrelation(qs):
     racf /= np.max(racf)
     return racf, qsn
 
-def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
+def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit=None, xi_crit_factor=3.0):
 
-    # Use Autocorrelation SNR to calibrate xi_crit
-    sigma_noise = measure_noise(racf)
-    xi_crit = snr_xicrit_calibration(sigma_noise, turning_point=0.25, max_value=0.8)
+    # Use Autocorrelation SNR to calibrate xi_crit if not provided
+    if xi_crit is None:
+        sigma_noise = measure_noise(racf)
+        xi_crit = snr_xicrit_calibration(sigma_noise, turning_point=0.25, max_value=0.8)
     
     racf_cut = np.copy(racf)
     
@@ -563,14 +564,16 @@ def determine_xi_crit_factor(path):
     else:
         return 0.6
 
-def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, is_truth=False):
+def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_base, is_truth=False):
     # Setup MCMC
     # Sigma fit from xi_crit RMSE curves
-    sigma = 0.7 
-    # xi_crit bounds (0, 1)
-    # Trunculated normal for xi_crit
-    a, b = (0 - xi_crit_factor_base) / sigma, (1 - xi_crit_factor_base) / sigma
-    xi_crit_samples = truncnorm.rvs(a, b, loc=xi_crit_factor_base, scale=sigma, size=n_samples)
+    # We perturb the calibration threshold (xi_crit) slightly to account for uncertainty.
+    # We apply a 20% perturbation to the base threshold.
+    sigma_xi = 0.2 * xi_crit_base 
+    
+    # Truncated normal for xi_crit
+    a, b = (0 - xi_crit_base) / sigma_xi, (1 - xi_crit_base) / sigma_xi
+    xi_crit_samples = truncnorm.rvs(a, b, loc=xi_crit_base, scale=sigma_xi, size=n_samples)
     
     # Perturb Ring Parameters (x, y, r)
     # rerr is used for std of x, y, r perturbation
@@ -593,13 +596,10 @@ def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, is_trut
         racf, _ = compute_autocorrelation(qs)
         
         # Calculate pattern speed
-        # xi_crit is sampled factor * std
-        # xi_crit_abs = xi_crit * racf_std
-        # calculate_pattern_speed takes xi_crit
-        # Here calculate_pattern_speed takes xi_crit_factor and does factor * std.
-        # So we can pass xi_crit_samples[i] as the factor.
+        # Optimization: Pass the perturbed xi_crit directly.
+        # This avoids re-measuring noise (expensive least_squares) every iteration.
         
-        ps, _, _ = calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=xi_crit_samples[i])
+        ps, _, _ = calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit=xi_crit_samples[i])
         ps_samples.append(ps)
         
     ps_samples = np.array(ps_samples)
@@ -677,16 +677,20 @@ def process_movie(path, times, fov, npix, n_samples=0, is_truth=False):
     
     racf, qs_norm = compute_autocorrelation(qs)
     
-    # Determine xi_crit factor
-    xi_crit_factor = determine_xi_crit_factor(path)
+    # Determine xi_crit factor (UNUSED now, but kept for legacy structure if needed or removal)
+    # The real xi_crit is derived from the "Best Bet" RACF noise
+    sigma_noise_best = measure_noise(racf)
+    xi_crit_best = snr_xicrit_calibration(sigma_noise_best, turning_point=0.25, max_value=0.8)
     
-    ps, racf_cut, mask = calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=xi_crit_factor)
+    # Calculate Best Bet Pattern Speed using this calibrated value
+    ps, racf_cut, mask = calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit=xi_crit_best)
     
     # MCMC
     mcmc_res = None
     if n_samples > 0:
         print(f"Running MCMC with {n_samples} samples...")
-        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor, is_truth=is_truth)
+        # Pass the calibrated threshold as base for perturbation
+        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_best, is_truth=is_truth)
     
     return {
         'mean_im': mean_im,
