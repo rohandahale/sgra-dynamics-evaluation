@@ -40,7 +40,7 @@ mpl.rcParams['figure.dpi'] = 300
 def create_parser():
     p = argparse.ArgumentParser()
     p.add_argument('-d', '--data', type=str, required=True, help='UVFITS data file')
-    p.add_argument('--truthmv', type=str, required=True, help='Truth HDF5 movie file')
+    p.add_argument('--truthmv', type=str, required=False, default=None, help='Truth HDF5 movie file')
     p.add_argument('--input', type=str, nargs='+', required=True, help='Glob pattern(s) or list of HDF5 model files (e.g., "path/*.h5")')
     p.add_argument('-o', '--outpath', type=str, default='./hotspot', help='Output prefix (without extension)')
     p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
@@ -147,9 +147,10 @@ def main():
                 min_t_list.append(min(mv.times))
                 max_t_list.append(max(mv.times))
             # Scan Truth
-            truth_mov = eh.movie.load_hdf5(args.truthmv)
-            min_t_list.append(min(truth_mov.times))
-            max_t_list.append(max(truth_mov.times))
+            if args.truthmv:
+                truth_mov = eh.movie.load_hdf5(args.truthmv)
+                min_t_list.append(min(truth_mov.times))
+                max_t_list.append(max(truth_mov.times))
 
     if not min_t_list:
         print("No valid movies found.")
@@ -167,10 +168,12 @@ def main():
     fov, pix = 200, 128
     
     # --- Process Truth ---
-    df_truth = process_movie(args.truthmv, times, fov, pix)
-    if df_truth is None:
-        print("Failed to process truth movie.")
-        return
+    df_truth = None
+    if args.truthmv:
+        df_truth = process_movie(args.truthmv, times, fov, pix)
+        if df_truth is None:
+            print("Failed to process truth movie.")
+            return
 
     # --- Process Input Files ---
     results = []
@@ -209,37 +212,46 @@ def main():
 
     # --- Compute Pass Percentages ---
     pass_percent = {}
-    for q in quantities:
-        truth_vals = df_truth[q].values
-        
-        if is_bayesian:
-            val = df_results[q+"_mean"]
-            std = df_results[q+"_std"]
-        else:
-            val = df_results[q]
-            std = np.zeros_like(val)
+    if df_truth is not None:
+        for q in quantities:
+            truth_vals = df_truth[q].values
+            
+            if is_bayesian:
+                val = df_results[q+"_mean"]
+                std = df_results[q+"_std"]
+            else:
+                val = df_results[q]
+                std = np.zeros_like(val)
 
-        if q == "flux":
-            lower_thr = truth_vals * (1 - thresholds["flux"])
-            upper_thr = truth_vals * (1 + thresholds["flux"])
-        else:
-            lower_thr = truth_vals - thresholds[q]
-            upper_thr = truth_vals + thresholds[q]
+            if q == "flux":
+                lower_thr = truth_vals * (1 - thresholds["flux"])
+                upper_thr = truth_vals * (1 + thresholds["flux"])
+            else:
+                lower_thr = truth_vals - thresholds[q]
+                upper_thr = truth_vals + thresholds[q]
 
-        # check overlap between (val-std, val+std) and (lower_thr, upper_thr)
-        lower_res = val - std
-        upper_res = val + std
-        overlap = (upper_res >= lower_thr) & (lower_res <= upper_thr)
-        pass_percent[q] = 100 * overlap.sum() / len(overlap)
+            # check overlap between (val-std, val+std) and (lower_thr, upper_thr)
+            lower_res = val - std
+            upper_res = val + std
+            overlap = (upper_res >= lower_thr) & (lower_res <= upper_thr)
+            pass_percent[q] = 100 * overlap.sum() / len(overlap)
+    else:
+        # Fill with N/A or similar if no truth
+        for q in quantities:
+            pass_percent[q] = 0.0 # Or maybe just don't set it and handle in plot
 
     # --- Combine Data ---
-    rename_dict = {col: col + '_truth' for col in df_truth.columns if col != 'time'}
-    df_truth_renamed = df_truth.rename(columns=rename_dict)
-    df_combined = df_results.merge(df_truth_renamed, on="time")
+    if df_truth is not None:
+        rename_dict = {col: col + '_truth' for col in df_truth.columns if col != 'time'}
+        df_truth_renamed = df_truth.rename(columns=rename_dict)
+        df_combined = df_results.merge(df_truth_renamed, on="time")
+    else:
+        df_combined = df_results.copy()
 
     for q in quantities:
         df_combined[q+"_threshold"] = thresholds[q] if q != "flux" else thresholds["flux"] * 100
-        df_combined[q+"_pass_percent"] = pass_percent[q]
+        if q in pass_percent:
+            df_combined[q+"_pass_percent"] = pass_percent[q]
 
     # --- Save CSV ---
     csv_path = f"{args.outpath}_hotspot.csv"
@@ -259,25 +271,34 @@ def main():
 
     for i, (q, ylabel) in enumerate(zip(quantities, ylabels)):
         ax = axes[i]
-        truth_vals = df_truth[q].values
-        
-        if is_bayesian:
-            val = df_results[q+"_mean"]
-            std = df_results[q+"_std"]
-        else:
-            val = df_results[q]
-            std = None
+        if df_truth is not None:
+            truth_vals = df_truth[q].values
             
-        ax.scatter(df_truth["time"], truth_vals, color="k", lw=2, label="truth", s=10, alpha=0.7)
+            if is_bayesian:
+                val = df_results[q+"_mean"]
+                std = df_results[q+"_std"]
+            else:
+                val = df_results[q]
+                std = None
+                
+            ax.scatter(df_truth["time"], truth_vals, color="k", lw=2, label="truth", s=10, alpha=0.7)
 
-        # Threshold shading
-        if q == "flux":
-            upper = truth_vals * (1 + thresholds["flux"])
-            lower = truth_vals * (1 - thresholds["flux"])
+            # Threshold shading
+            if q == "flux":
+                upper = truth_vals * (1 + thresholds["flux"])
+                lower = truth_vals * (1 - thresholds["flux"])
+            else:
+                upper = truth_vals + thresholds[q]
+                lower = truth_vals - thresholds[q]
+            ax.fill_between(df_truth["time"], lower, upper, color="gray", alpha=0.3, label="threshold")
         else:
-            upper = truth_vals + thresholds[q]
-            lower = truth_vals - thresholds[q]
-        ax.fill_between(df_truth["time"], lower, upper, color="gray", alpha=0.3, label="threshold")
+            # Just plotting recon
+            if is_bayesian:
+                val = df_results[q+"_mean"]
+                std = df_results[q+"_std"]
+            else:
+                val = df_results[q]
+                std = None
 
         # mean ± std or single value
         if is_bayesian:
@@ -289,8 +310,11 @@ def main():
         ax.set_ylabel(ylabel)
         ax.grid(True, ls='--', alpha=0.4)
 
-        pct = pass_percent[q]
-        ax.set_title(f"{q}: {pct:.1f}% pass", fontsize=18)
+        if q in pass_percent:
+            pct = pass_percent[q]
+            ax.set_title(f"{q}: {pct:.1f}% pass", fontsize=18)
+        else:
+            ax.set_title(f"{q}", fontsize=18)
 
     axes[-1].set_xlabel("Time (UT)")
     axes[-2].set_xlabel("Time (UT)")

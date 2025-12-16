@@ -30,7 +30,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.ndimage import label, center_of_mass
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from contextlib import redirect_stdout, redirect_stderr
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import functools
 import glob
 from tqdm import tqdm
@@ -153,10 +153,10 @@ class RingFitter:
         x_mesh = r_mesh * np.sin(angle_mesh) + center_x
         y_mesh = r_mesh * np.cos(angle_mesh) + center_y
         
-        for r in range(n_radial):
-            # Use the vectorized evaluation method of RectBivariateSpline
-            vals = [image_interp(y_mesh[i][r], x_mesh[i][r], grid=False) for i in range(len(angles))]
-            radial_image[r, :] = np.array(vals)
+        # Use vectorized evaluation method of RectBivariateSpline
+        # Flatten meshes to query all points at once
+        flat_vals = image_interp.ev(y_mesh.ravel(), x_mesh.ravel())
+        radial_image = flat_vals.reshape((n_radial, n_angles))
         radial_image = np.fliplr(radial_image)
         
         # Calculate ring parameters at each angle
@@ -388,7 +388,7 @@ def lower_xicrit_threshold(racf, xi_crit, non_zero_columns, non_zero_rows):
   #print('~~~b) New Col & Row Nums:', non_zero_columns, non_zero_rows, '. new xi_Crit:', xi_crit)
   return xi_crit, Q
 
-def sample_cylinder(sIall, ring_params, dx, x_shift=0, y_shift=0, r_shift=0):
+def sample_cylinder(sIall, ring_params, dx, x_shift=0, y_shift=0, r_shift=0, t_coords=None):
     # Dimensions from data
     # sIall is (y, x, time)
     ny, nx, nt = sIall.shape
@@ -439,7 +439,11 @@ def sample_cylinder(sIall, ring_params, dx, x_shift=0, y_shift=0, r_shift=0):
     # Order: for t in 0..nt: for angle in 0..ntheta
     # So t indices should be 0,0..0 (ntheta times), 1,1..1 (ntheta times)
     
-    T_coords = np.repeat(np.arange(nt), ntheta)
+    if t_coords is None:
+        T_coords = np.repeat(np.arange(nt), ntheta)
+    else:
+        T_coords = t_coords
+
     Y_coords = np.tile(icirc, nt)
     X_coords = np.tile(jcirc, nt)
     
@@ -460,11 +464,9 @@ def compute_autocorrelation(qs):
     
     # Mean subtract
     # Remove mean from each angle (column)
-    for i in range(qsn.shape[1]):
-        qsn[:, i] = qsn[:, i] - qsn[:, i].mean()
+    qsn = qsn - np.mean(qsn, axis=0, keepdims=True)
     # Remove mean from each time (row)
-    for i in range(qsn.shape[0]):
-        qsn[i, :] = qsn[i, :] - qsn[i, :].mean()
+    qsn = qsn - np.mean(qsn, axis=1, keepdims=True)
         
     qsn = tukey_window(qsn, alpha=0.2)
 
@@ -564,7 +566,7 @@ def determine_xi_crit_factor(path):
     else:
         return 0.6
 
-def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_base, is_truth=False):
+def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_base, is_truth=False, n_threads=1):
     # Setup MCMC
     # Sigma fit from xi_crit RMSE curves
     # We perturb the calibration threshold (xi_crit) slightly to account for uncertainty.
@@ -585,12 +587,18 @@ def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_base, is_truth=False
     
     ps_samples = []
     
-    for i in range(n_samples):
+    # Pre-compute t_coords
+    nt = sIall.shape[2]
+    ntheta = 180
+    t_coords = np.repeat(np.arange(nt), ntheta)
+    
+    def mcmc_task(i):
         # Sample cylinder with perturbed parameters
         qs = sample_cylinder(sIall, ring_params, dx, 
                            x_shift=x_factor_samples[i], 
                            y_shift=y_factor_samples[i], 
-                           r_shift=r_factor_samples[i])
+                           r_shift=r_factor_samples[i],
+                           t_coords=t_coords)
         
         # Compute Autocorr
         racf, _ = compute_autocorrelation(qs)
@@ -600,7 +608,13 @@ def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_base, is_truth=False
         # This avoids re-measuring noise (expensive least_squares) every iteration.
         
         ps, _, _ = calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit=xi_crit_samples[i])
-        ps_samples.append(ps)
+        return ps
+
+    if n_threads > 1:
+        with ThreadPoolExecutor(max_workers=n_threads) as executor:
+            ps_samples = list(executor.map(mcmc_task, range(n_samples)))
+    else:
+        ps_samples = [mcmc_task(i) for i in range(n_samples)]
         
     ps_samples = np.array(ps_samples)
     
@@ -632,7 +646,7 @@ def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_base, is_truth=False
 # -----------------------------------------------------------------------------
 # Main Processing
 # -----------------------------------------------------------------------------
-def process_movie(path, times, fov, npix, n_samples=0, is_truth=False):
+def process_movie(path, times, fov, npix, n_samples=0, is_truth=False, n_threads=1):
     # Load movie
     mv = eh.movie.load_hdf5(path)
     
@@ -690,7 +704,7 @@ def process_movie(path, times, fov, npix, n_samples=0, is_truth=False):
     if n_samples > 0:
         print(f"Running MCMC with {n_samples} samples...")
         # Pass the calibrated threshold as base for perturbation
-        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_best, is_truth=is_truth)
+        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_best, is_truth=is_truth, n_threads=n_threads)
     
     return {
         'mean_im': mean_im,
@@ -1031,13 +1045,33 @@ def main():
     max_workers = args.ncores
     print(f"Starting parallel processing with {max_workers} workers...")
     
+    # Calculate threads per process
+    # If we have few files, we can use more threads per file for MCMC parallelism.
+    # If we have many files, we rely on ProcessPool parallelism.
+    num_files = len(input_files)
+    # Effective active processes
+    active_processes = min(num_files, max_workers)
+    
+    # Threads per process
+    # Ensure at least 1, and don't oversubscribe significantly
+    # We allow some oversubscription because map_coordinates releases GIL and is efficient
+    threads_per_process = max(1, args.ncores // active_processes)
+    
+    # Cap threads per process to avoid excessive overhead (e.g. max 8 or 16)
+    # Although map_coordinates is good, too many threads might contend.
+    if threads_per_process > 16:
+        threads_per_process = 16
+        
+    print(f"Allocating {threads_per_process} threads per process (Active processes: {active_processes}).")
+    
     # Partial function to fix constant arguments
     process_func = functools.partial(process_movie, 
                                      times=obs_times, 
                                      fov=fov, 
                                      npix=npix, 
                                      n_samples=args.nsamples, 
-                                     is_truth=False)
+                                     is_truth=False,
+                                     n_threads=threads_per_process)
 
     recon_results_list = []
     # If single file and 1 core, avoid pool overhead? Not critical, but safe.
@@ -1147,7 +1181,7 @@ def main():
     if args.truthmv:
         print(f"Processing Truth: {args.truthmv}")
         # Truth usually single file
-        truth_res = process_movie(args.truthmv, obs_times, fov, npix, n_samples=args.nsamples, is_truth=True)
+        truth_res = process_movie(args.truthmv, obs_times, fov, npix, n_samples=args.nsamples, is_truth=True, n_threads=args.ncores)
         
     print(f"Saving results to {args.outpath}...")
     plot_results(args.outpath, final_recon_res, truth_res)

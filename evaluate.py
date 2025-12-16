@@ -86,6 +86,11 @@ def main():
         
         # 1. Define Output Directory
         # "Outpath is <results_dir>/<model>_<pipeline>"
+        
+        # Determine if we should use truth based on model
+        sgra_variants = ["SGRA", "sgra", "Sgra", "SgrA"]
+        # Use truth only if model is NOT one of the SGRA variants
+        use_truth_for_model = model not in sgra_variants
         out_prefix = os.path.join(results_dir, f"{model}_{pipeline}")
         
         # 2. File Paths construction
@@ -224,16 +229,17 @@ def main():
             if not overwrite and os.path.exists(f"{out_prefix}_hotspot.csv"):
                 print(f"Skipping Hotspot: Output {out_prefix}_hotspot.csv already exists.")
             else:
-                cmd = build_cmd('hotspot.py', input_arg, out_prefix, use_truth=True)
+                cmd = build_cmd('hotspot.py', input_arg, out_prefix, use_truth=use_truth_for_model)
                 run_command(cmd, "Hotspot Feature Extraction")
 
         # d) Nxcorr
         if config['run_steps']['nxcorr']:
-            # Check for any of the expected outputs, e.g. total mode
-            if not overwrite and os.path.exists(f"{out_prefix}_total_nxcorr.csv"):
+            if not use_truth_for_model:
+                print("Skipping Nxcorr: Truth movie not available/required for this model.")
+            elif not overwrite and os.path.exists(f"{out_prefix}_total_nxcorr.csv"):
                 print(f"Skipping Nxcorr: Output {out_prefix}_total_nxcorr.csv already exists.")
             else:
-                cmd = build_cmd('nxcorr.py', input_arg, out_prefix, use_truth=True)
+                cmd = build_cmd('nxcorr.py', input_arg, out_prefix, use_truth=use_truth_for_model)
                 run_command(cmd, "Nxcorr Analysis")
 
         # e) Pattern Speed
@@ -241,7 +247,7 @@ def main():
             if not overwrite and os.path.exists(f"{out_prefix}_patternspeed_summary.png"):
                 print(f"Skipping Pattern Speed: Output {out_prefix}_patternspeed_summary.png already exists.")
             else:
-                cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=True)
+                cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=use_truth_for_model)
                 run_command(cmd, "Pattern Speed")
 
         # e2) Pattern Speed v2
@@ -256,7 +262,7 @@ def main():
             if not overwrite and os.path.exists(f"{v2_prefix}_patternspeed_summary.png"):
                 print(f"Skipping Pattern Speed v2: Output {v2_prefix}_patternspeed_summary.png already exists.")
             else:
-                cmd = build_cmd('patternspeed_v2.py', input_arg, v2_prefix, use_truth=True)
+                cmd = build_cmd('patternspeed_v2.py', input_arg, v2_prefix, use_truth=use_truth_for_model)
                 run_command(cmd, "Pattern Speed v2")
             
         # f) Rex
@@ -264,7 +270,7 @@ def main():
              if not overwrite and os.path.exists(f"{out_prefix}_rex.csv"):
                  print(f"Skipping REx: Output {out_prefix}_rex.csv already exists.")
              else:
-                 cmd = build_cmd('rex.py', input_arg, out_prefix, use_truth=True)
+                 cmd = build_cmd('rex.py', input_arg, out_prefix, use_truth=use_truth_for_model)
                  run_command(cmd, "Ring Extraction (REx)")
              
         # g) Visualize
@@ -273,7 +279,7 @@ def main():
                 print(f"Skipping Visualization: GIFs already exist.")
             else:
                 if visualize_input:
-                    cmd = build_cmd('visualize.py', visualize_input, out_prefix, use_truth=True)
+                    cmd = build_cmd('visualize.py', visualize_input, out_prefix, use_truth=use_truth_for_model)
                     run_command(cmd, "Visualization")
                 else:
                     print("Skipping Visualization: No valid input file (Mean file missing for Bayesian?).")
