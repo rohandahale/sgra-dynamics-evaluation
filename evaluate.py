@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import yaml
 import argparse
@@ -46,8 +47,18 @@ def main():
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
-    # Copy config file to results directory
-    shutil.copy(args.config, os.path.join(results_dir, 'params.yml'))
+    # Copy config file to results directory with versioning
+    existing_params = glob(os.path.join(results_dir, 'params_v*.yml'))
+    max_version = 0
+    for p in existing_params:
+        match = re.search(r'params_v(\d+)\.yml', os.path.basename(p))
+        if match:
+            max_version = max(max_version, int(match.group(1)))
+    
+    next_version = max_version + 1
+    new_params_path = os.path.join(results_dir, f'params_v{next_version}.yml')
+    shutil.copy(args.config, new_params_path)
+    print(f"Copied configuration to {new_params_path}")
         
     # Parameters (Single Choice where applicable)
     models = config['models']
