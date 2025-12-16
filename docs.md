@@ -213,3 +213,47 @@ For baselines in the $(u,v)$ plane:
     Where $R$ is the mean resultant vector length. $R=1$ implies perfect coherence (0 variance), $R=0$ implies uniform randomness (1 variance).
 
 These variances map the stability of the source structure over time.
+
+---
+
+## 7. `src/patternspeed_v2.py`
+
+### Goal
+To determine the rotation speed of the accretion flow ($\Omega_p$) using an enhanced spatiotemporal autocorrelation method with adaptive noise calibration and MCMC error estimation.
+
+### Processing Steps
+1.  **Ring Fitting**:
+    *   Identify the ring center $(x_c, y_c)$ using `ehtim`'s REx interface.
+    *   Extract ring parameters (Diameter $D$, Width $W$) via radial profile analysis of the mean image to determine the optimal sampling radius.
+
+2.  **Cylinder Sampling**:
+    *   Extract time-variable intensity rings $I(\phi, t)$ at the fitted radius $R = D/2$.
+    *   Unwrap into a "cylinder" map $(t, \phi)$ using vectorized interpolation.
+    *   **Smoothing**: Apply Gaussian smoothing ($\sigma \approx 20\,\mu\text{as}$) to reduce high-frequency noise and pixelation artifacts.
+
+3.  **Autocorrelation (ACF)**:
+    *   Normalize and mean-subtract the cylinder data.
+    *   Apply a **Tukey Window** to edges to prevent spectral leakage.
+    *   Compute 2D ACF: $\mathcal{C} = \text{IFFT}( |\text{FFT}(I_{cyl})|^2 )$.
+
+4.  **Noise Calibration & Thresholding**:
+    *   **Noise Measure ($\sigma_{noise}$)**: Fit a 2D Gaussian to the central ACF peak and calculate the standard deviation of the residuals (the "noise floor").
+    *   **Adaptive Threshold ($\xi_{crit}$)**:
+        The correlation threshold is dynamically calibrated based on the noise level:
+        $$ \xi_{crit} = \begin{cases} \frac{0.8}{0.25} \sigma_{noise} & \text{if } \sigma_{noise} < 0.25 \\ 0.8 & \text{otherwise} \end{cases} $$
+    *   **Region Selection**: Select the connected region around the center where $\mathcal{C} > \xi_{crit}$. If the region is too small (< 5 pixels dimensions), iteratively lower $\xi_{crit}$ until a valid region is captured.
+
+5.  **Moment Analysis**:
+    *   Calculate the pattern speed $\Omega_p$ from the weighted second moments of the thresholded ACF region $R_{cut}$:
+    *   $$ \Omega_P = \frac{\sum_{i \in R_{cut}} \mathcal{C}_i \cdot t_i \cdot \phi_i}{\sum_{i \in R_{cut}} \mathcal{C}_i \cdot t_i^2} $$
+
+6.  **MCMC Uncertainty Estimation**:
+    *   Perform Monte Carlo sampling ($N \approx 1000$):
+        *   Perturb ring parameters ($x, y, r$) by their estimated fit errors.
+        *   Perturb $\xi_{crit}$ by $\sim 20\%$.
+    *   Generates a probability distribution of pattern speeds for robust error derivation.
+
+### Pass Criteria
+*   **Interval Overlap**: Checks if the credible interval of the Reconstruction overlaps with that of the Truth.
+*   **Pass Condition**:
+    $$ [\mu_{rec} - \sigma_{rec}, \mu_{rec} + \sigma_{rec}] \cap [\mu_{true} - \sigma_{true}, \mu_{true} + \sigma_{true}] \neq \emptyset $$
