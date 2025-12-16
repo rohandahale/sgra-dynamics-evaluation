@@ -232,6 +232,21 @@ def main():
             else:
                 cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=True)
                 run_command(cmd, "Pattern Speed")
+
+        # e2) Pattern Speed v2
+        if config['run_steps'].get('patternspeed_v2', False):
+            # Create subfolder
+            v2_dir = os.path.join(results_dir, "patternspeed_v2")
+            if not os.path.exists(v2_dir):
+                os.makedirs(v2_dir)
+            
+            v2_prefix = os.path.join(v2_dir, f"{model}_{pipeline}")
+            
+            if not overwrite and os.path.exists(f"{v2_prefix}_patternspeed_summary.png"):
+                print(f"Skipping Pattern Speed v2: Output {v2_prefix}_patternspeed_summary.png already exists.")
+            else:
+                cmd = build_cmd('patternspeed_v2.py', input_arg, v2_prefix, use_truth=True)
+                run_command(cmd, "Pattern Speed v2")
             
         # f) Rex
         if config['run_steps']['rex']:
