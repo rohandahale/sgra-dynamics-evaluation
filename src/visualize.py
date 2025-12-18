@@ -441,14 +441,14 @@ def compute_variance_parallel(frames_data, uv_points, fov, npix, ncores=1):
             var_amp = std_amp / mean_amp
         var_amp[mean_amp == 0] = 0
         
-        # Phase Variance (1 - R)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            phasors = vis_stack / np.abs(vis_stack)
+        # Phase Variance
+        angles = np.angle(vis_stack)
+        phasors = np.exp(1j * angles)
         phasors[np.abs(vis_stack) == 0] = 0
         mean_phasor = np.mean(phasors, axis=0)
         R = np.abs(mean_phasor)
         var_phase = 1 - R
-        
+            
         return var_amp, var_phase
         
     var_amp_I, var_phase_I = get_var(visI)
@@ -465,6 +465,13 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
     V = np.linspace(-10.0e9, 10.0e9, npix)
     UU, VV = np.meshgrid(U, V)
     UV = np.vstack((UU.flatten(), VV.flatten())).T
+
+    # Calculate mask based on max UV radius from observations
+    u_obs = obs.data['u']
+    v_obs = obs.data['v']
+    max_baseline = np.max(np.sqrt(u_obs**2 + v_obs**2))
+    grid_radii = np.sqrt(UV[:, 0]**2 + UV[:, 1]**2)
+    mask = grid_radii <= max_baseline
     
     # Calculate variances
     r_vars = compute_variance_parallel(recon_data, UV, fov, npix, ncores)
@@ -501,8 +508,7 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
     gs = fig.add_gridspec(nrows, ncols + 1, width_ratios=[1, 1, 1, 1, 0.05])
     
     extent = [10, -10, -10, 10]
-    u_obs = obs.data['u']
-    v_obs = obs.data['v']
+    # u_obs, v_obs extracted earlier
     
     col_names = ['I', 'Q', 'U', 'P']
     
@@ -515,23 +521,23 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
                 for j in range(ncols):
                     all_amp.append(t_vars[j][0])
                     all_amp.append(r_vars[j][0])
-                vmax = np.max(all_amp)
+                vmax = np.max([np.max(d[mask]) for d in all_amp])
                 cmap = 'binary'
             else: # Phase
                 all_phase = []
                 for j in range(ncols):
                     all_phase.append(t_vars[j][1])
                     all_phase.append(r_vars[j][1])
-                vmax = np.max(all_phase)
+                vmax = np.max([np.max(d[mask]) for d in all_phase])
                 cmap = 'twilight'
         else:
             if i == 0:
                 all_amp = [r_vars[j][0] for j in range(ncols)]
-                vmax = np.max(all_amp)
+                vmax = np.max([np.max(d[mask]) for d in all_amp])
                 cmap = 'binary'
             else:
                 all_phase = [r_vars[j][1] for j in range(ncols)]
-                vmax = np.max(all_phase)
+                vmax = np.max([np.max(d[mask]) for d in all_phase])
                 cmap = 'twilight'
                 
         for j in range(ncols):
@@ -549,7 +555,7 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
             im = ax.imshow(data.reshape(npix, npix), cmap=cmap, extent=extent, origin='lower', vmin=0, vmax=vmax)
             
             # Add max value text
-            current_max = np.max(data)
+            current_max = np.max(data[mask])
             ax.text(0.95, 0.95, f"max: {current_max:.2f}", transform=ax.transAxes,
                     ha='right', va='top', color='red', fontsize=14)
             

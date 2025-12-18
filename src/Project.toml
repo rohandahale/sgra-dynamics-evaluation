@@ -1,0 +1,11 @@
+[deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Comrade = "99d987ce-9a1e-4df8-bc0b-1ea019aa547b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
+OptimizationMetaheuristics = "3aafef2f-86ae-4776-b337-85a36adf0b55"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+VIDA = "4096cdfb-f084-40a3-b02d-1a2a54920cb8"
+VLBISkyModels = "d6343c73-7174-4e0f-bb64-562643efbeca"

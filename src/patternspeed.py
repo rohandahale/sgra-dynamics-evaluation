@@ -331,11 +331,39 @@ def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
     labels_map, num_features = label((racf > xi_crit).astype(int))
     center_idx = (racf.shape[0]//2, racf.shape[1]//2)
     
-    # Safety check: if center is not in thresholded region
-    if labels_map[center_idx] == 0:
-         return 0.0, np.zeros_like(racf), np.zeros_like(labels_map, dtype=bool)
+    # Check initial region width
+    non_zero_columns = 0
+    if labels_map[center_idx] != 0:
+         Q = labels_map == labels_map[center_idx]
+         non_zero_columns = np.count_nonzero(np.sum(Q, axis=0))
+    
+    # Fallback: if center not in threshold or region too thin (< 5 pixels)
+    if (labels_map[center_idx] == 0) or (non_zero_columns < 5):
+         target_width = 5
+         col_offset = target_width // 2
          
-    Q = labels_map == labels_map[center_idx]
+         # Determine edge column (ensure in bounds)
+         edge_col = min(center_idx[1] + col_offset, racf.shape[1] - 1)
+         
+         # Set xi_crit to max value at edge column to ensure width >= target_width
+         xi_crit = np.max(racf[:, int(edge_col)])
+         
+         # Restrict mask to target strip (mimicking cylinder.py fallback)
+         col_indices = np.arange(racf.shape[1])
+         strip_mask = np.abs(col_indices - center_idx[1]) <= col_offset
+         
+         threshold_mask = (racf >= xi_crit) & strip_mask[np.newaxis, :]
+         mask_int = threshold_mask.astype(int)
+         
+         labels_map, num_features = label(mask_int)
+         
+         # Final safety check
+         if labels_map[center_idx] == 0:
+              return 0.0, np.zeros_like(racf), np.zeros_like(labels_map, dtype=bool)
+
+         Q = labels_map == labels_map[center_idx]
+    else:
+         Q = labels_map == labels_map[center_idx]
     
     # Moments
     ts = np.linspace(-len(racf)/2, len(racf)/2, len(racf), endpoint=False)
@@ -344,24 +372,16 @@ def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
     delta_t = ts[1] - ts[0]
     delta_phi = phis[1] - phis[0]
     
-    moment_t = 0
-    moment_t_phi = 0
-    
-    # Apply mask
-    mask_indices = np.where(Q)
-    
-    racf_cut[~Q] = 0.0
-    
-    # Calculate moments
     # Meshgrid
     T_mesh, Phi_mesh = np.meshgrid(ts, phis, indexing='ij')
     
+    # Apply mask
+    racf_cut[~Q] = 0.0
+    
     # Weighted sums
-    moment = np.sum(racf_cut)
     moment_t = np.sum(racf_cut * T_mesh**2)
     moment_t_phi = np.sum(racf_cut * T_mesh * Phi_mesh)
     
-    # Normalize moments (dividing by moment cancels out the delta_t*delta_phi factors in the ratio)
     if moment_t == 0:
         pattern_speed = 0
     else:
@@ -377,9 +397,9 @@ def determine_xi_crit_factor(path):
             return 2.0
         else:
             return 3.0
-    elif 'modeling_mean' in path:
+    elif 'modeling' in path:
         return 0.6
-    elif 'resolve_mean' in path:
+    elif 'resolve' in path:
         return 0.2
     elif 'doghit' in path:
         return 1.2
@@ -392,14 +412,18 @@ def determine_xi_crit_factor(path):
     else:
         return 0.6
 
-def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, is_truth=False):
+def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, racf_best_std, is_truth=False):
     # Setup MCMC
     # Sigma fit from xi_crit RMSE curves
     sigma = 0.7 
-    # xi_crit bounds (0, 1)
-    # Trunculated normal for xi_crit
-    a, b = (0 - xi_crit_factor_base) / sigma, (1 - xi_crit_factor_base) / sigma
-    xi_crit_samples = truncnorm.rvs(a, b, loc=xi_crit_factor_base, scale=sigma, size=n_samples)
+    
+    # Calculate base absolute threshold (mimicking cylinder.py logic)
+    abs_base = xi_crit_factor_base * racf_best_std
+    
+    # xi_crit bounds (0, 1) in absolute units
+    # Truncated normal for xi_crit
+    a, b = (0 - abs_base) / sigma, (1 - abs_base) / sigma
+    xi_crit_abs_samples = truncnorm.rvs(a, b, loc=abs_base, scale=sigma, size=n_samples)
     
     # Perturb Ring Parameters (x, y, r)
     # rerr is used for std of x, y, r perturbation
@@ -422,13 +446,11 @@ def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, is_trut
         racf, _ = compute_autocorrelation(qs)
         
         # Calculate pattern speed
-        # xi_crit is sampled factor * std
-        # xi_crit_abs = xi_crit * racf_std
-        # calculate_pattern_speed takes xi_crit
-        # Here calculate_pattern_speed takes xi_crit_factor and does factor * std.
-        # So we can pass xi_crit_samples[i] as the factor.
+        # Convert absolute sample to factor for this specific realization
+        current_std = np.std(racf)
+        factor = xi_crit_abs_samples[i] / current_std
         
-        ps, _, _ = calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=xi_crit_samples[i])
+        ps, _, _ = calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=factor)
         ps_samples.append(ps)
         
     ps_samples = np.array(ps_samples)
@@ -469,8 +491,8 @@ def process_movie(path, times, fov, npix, n_samples=0, is_truth=False):
     min_t = times.min()
     max_t = times.max()
     
-    # Time stamps every minute
-    step_hr = 1.0/60.0
+    # Time stamps every two minutes
+    step_hr = 2*1.0/60.0
     uniform_times = np.arange(min_t, max_t + 1e-5, step_hr)
     ntimes = len(uniform_times) 
     
@@ -515,7 +537,9 @@ def process_movie(path, times, fov, npix, n_samples=0, is_truth=False):
     mcmc_res = None
     if n_samples > 0:
         print(f"Running MCMC with {n_samples} samples...")
-        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor, is_truth=is_truth)
+        # Calculate std of the best-bet racf for MCMC baseline
+        racf_best_std = np.std(racf)
+        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor, racf_best_std=racf_best_std, is_truth=is_truth)
     
     return {
         'mean_im': mean_im,

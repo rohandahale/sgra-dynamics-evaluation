@@ -104,4 +104,5 @@ run_steps:
   patternspeed: True
   patternspeed_v2: True
   rex: True
+  vida_pol: True
   vizualize: True

@@ -206,9 +206,20 @@ def main():
 
         # a) Preprocess HDF5
         if config['run_steps']['preprocess_hdf5']:
+            preprocess_inputs = list(input_arg)
+            
+            # Add Truth if applicable and exists
+            if use_truth_for_model and os.path.exists(truth_path):
+                preprocess_inputs.append(truth_path)
+            
+            # Add Bayesian Mean if applicable
+            # Only in Bayesian mode is the mean file distinct from the input_arg list
+            if is_bayesian and visualize_input and visualize_input not in preprocess_inputs:
+                 preprocess_inputs.append(visualize_input)
+
             cmd = ['python', os.path.join(src_dir, 'preprocess_hdf5.py'),
                    '-d', data_path,
-                   '--input'] + input_arg + [
+                   '--input'] + preprocess_inputs + [
                    '-o', out_prefix,
                    '-n', ncores]
             if tstart is not None: cmd.extend(['--tstart', str(tstart)])
@@ -272,6 +283,15 @@ def main():
              else:
                  cmd = build_cmd('rex.py', input_arg, out_prefix, use_truth=use_truth_for_model)
                  run_command(cmd, "Ring Extraction (REx)")
+             
+        # f2) Vida Pol
+        if config['run_steps'].get('vida_pol', False):
+            if not overwrite and os.path.exists(f"{out_prefix}_vida.csv"):
+                print(f"Skipping VIDA Pol: Output {out_prefix}_vida.csv already exists.")
+            else:
+                cmd = build_cmd('vida_pol.py', input_arg, out_prefix, use_truth=use_truth_for_model)
+                run_command(cmd, "VIDA Polarization Extraction")
+
              
         # g) Visualize
         if config['run_steps']['vizualize']:

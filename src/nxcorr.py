@@ -232,7 +232,7 @@ def pnxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
 
     return evpa_corr, phase_threshold
 
-def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
+def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20, min_P_mask_frac=0.05):
     # Regrid images
     imt = im_truth.regrid_image(fov, npix)
     imr = im_recon.regrid_image(fov, npix)
@@ -243,12 +243,17 @@ def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
     Q_recon = imr.qvec.reshape(npix, npix)
     U_recon = imr.uvec.reshape(npix, npix)
 
+    # Truth masking based on low P mag (<5% of peak)
+    P_amp_truth = np.sqrt(Q_truth**2 + U_truth**2)
+    P_peak = np.max(P_amp_truth)
+    mask = P_amp_truth >= (P_peak * min_P_mask_frac)
+
     # EVPA decomposition
     zeta_truth = 0.5 * np.arctan2(U_truth, Q_truth)
     zeta_recon = 0.5 * np.arctan2(U_recon, Q_recon)
 
-    Pdir_truth = np.exp(1j * 2 * zeta_truth)
-    Pdir_recon = np.exp(1j * 2 * zeta_recon)
+    Pdir_truth = np.exp(1j * 2 * zeta_truth) * mask
+    Pdir_recon = np.exp(1j * 2 * zeta_recon) * mask
 
     # --- Implement Pearson Correlation ---
 
