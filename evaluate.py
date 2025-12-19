@@ -206,16 +206,15 @@ def main():
 
         # a) Preprocess HDF5
         if config['run_steps']['preprocess_hdf5']:
-            preprocess_inputs = list(input_arg)
+            preprocess_inputs = []
+            
+            # Use the visualization input (Mean file in Bayesian mode, single recon in others)
+            if visualize_input and os.path.exists(visualize_input):
+                preprocess_inputs.append(visualize_input)
             
             # Add Truth if applicable and exists
             if use_truth_for_model and os.path.exists(truth_path):
                 preprocess_inputs.append(truth_path)
-            
-            # Add Bayesian Mean if applicable
-            # Only in Bayesian mode is the mean file distinct from the input_arg list
-            if is_bayesian and visualize_input and visualize_input not in preprocess_inputs:
-                 preprocess_inputs.append(visualize_input)
 
             cmd = ['python', os.path.join(src_dir, 'preprocess_hdf5.py'),
                    '-d', data_path,
@@ -224,7 +223,6 @@ def main():
                    '-n', ncores]
             if tstart is not None: cmd.extend(['--tstart', str(tstart)])
             if tstop is not None: cmd.extend(['--tstop', str(tstop)])
-            
             run_command(cmd, "Preprocess HDF5")
 
         # b) Chisq

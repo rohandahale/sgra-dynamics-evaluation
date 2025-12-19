@@ -204,7 +204,7 @@ end
             x0=-μas2rad(20.0), y0=-μas2rad(20.0),
             f0=1e-6
         )
-        upper = (r0=μas2rad(40.0), σ=μas2rad(15.0),
+        upper = (r0=μas2rad(60.0), σ=μas2rad(25.0),
             s=ntuple(_ -> 0.999, N),
             ξ=ntuple(_ -> 2π, N),
             τ=1.0,

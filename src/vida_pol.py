@@ -53,14 +53,25 @@ def create_parser():
     p.add_argument('--stride', type=int, default=10, help='Stride for checkponting and parallel batching (Julia)')
     return p
 
+def kill_julia_process():
+    """Kills any existing vida_pol.jl processes to free memory."""
+    try:
+        subprocess.run(["pkill", "-f", "vida_pol.jl"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
 def run_julia_on_temp(input_movie_path, output_csv, times, procs=1, blur=0.0, no_regrid=False, maxiters=20000, stride=10):
     """
-    1. Loads input_movie_path using ehtim.
-    2. Interpolates/extracts frames at `times`.
-    3. Saves to a temporary HDF5 file.
-    4. Runs vida_pol.jl on the temp file.
-    5. Cleans up temp file.
+    1. Force kills previous Julia processes.
+    2. Loads input_movie_path using ehtim.
+    3. Interpolates/extracts frames at `times`.
+    4. Saves to a temporary HDF5 file.
+    5. Runs vida_pol.jl on the temp file.
+    6. Cleans up temp file.
     """
+    # Ensure fresh start for memory
+    kill_julia_process()
+
     if os.path.exists(output_csv):
         print(f"Skipping Julia run, {output_csv} exists.")
         return output_csv
@@ -456,10 +467,11 @@ def main():
         # PA Threshold
         A0 = 0.7184071604180173
         pa_threshold0 = 26.0
-        recon_A = final_df['A_mean'] if is_bayesian else final_df['A']
-        recon_A_safe = np.where(recon_A == 0, 1e-6, recon_A)
-        pa_threshold_arr = pa_threshold0 * A0 / recon_A_safe
-        threshold_arrays['PA'] = pa_threshold_arr
+        if 'A_truth' in final_df.columns:
+             truth_A = final_df['A_truth']
+             truth_A_safe = np.where(truth_A == 0, 1e-6, truth_A)
+             pa_threshold_arr = pa_threshold0 * A0 / truth_A_safe
+             threshold_arrays['PA'] = pa_threshold_arr
         
         for metric in metrics_to_check:
             recon_col = f'{metric}_mean' if is_bayesian else metric
@@ -501,6 +513,10 @@ def main():
             pass_pct = np.count_nonzero(pass_condition) / len(recon_val) * 100
             pass_percentages[metric] = pass_pct
             final_df[f'pass_percent_{metric}'] = pass_pct
+        
+        # Save thresholds to dataframe
+        for metric, thres in threshold_arrays.items():
+            final_df[f'{metric}_threshold'] = thres
 
     out_csv = args.outpath + "_vida.csv"
     final_df.to_csv(out_csv, index=False)
@@ -566,8 +582,8 @@ def main():
     plt.savefig(args.outpath + '_vida.png', bbox_inches='tight', dpi=300)
     print(f"Saved plot to {args.outpath}_vida.png")
     
-    # Cleanup
-    if truth_csv and os.path.exists(truth_csv): os.remove(truth_csv)
+    # Cleanup memory
+    kill_julia_process()
 
 if __name__ == "__main__":
     main()
