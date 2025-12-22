@@ -232,72 +232,57 @@ def pnxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
 
     return evpa_corr, phase_threshold
 
-def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20, min_P_mask_frac=0.05):
+def enxcorr(im_truth, im_recon, npix, fov, beam, shift=None, truth_chi_rot=20):
     # Regrid images
     imt = im_truth.regrid_image(fov, npix)
     imr = im_recon.regrid_image(fov, npix)
 
-    # Q/U arrays
-    Q_truth = imt.qvec.reshape(npix, npix)
-    U_truth = imt.uvec.reshape(npix, npix)
-    Q_recon = imr.qvec.reshape(npix, npix)
-    U_recon = imr.uvec.reshape(npix, npix)
+    # Construct Complex Polarization Vectors (P = Q + iU)
+    P_truth = imt.qvec.reshape(npix, npix) + 1j * imt.uvec.reshape(npix, npix)
+    P_recon_raw = imr.qvec.reshape(npix, npix) + 1j * imr.uvec.reshape(npix, npix)
 
-    # Truth masking based on low P mag (<5% of peak)
-    P_amp_truth = np.sqrt(Q_truth**2 + U_truth**2)
-    P_peak = np.max(P_amp_truth)
-    mask = P_amp_truth >= (P_peak * min_P_mask_frac)
-
-    # EVPA decomposition
-    zeta_truth = 0.5 * np.arctan2(U_truth, Q_truth)
-    zeta_recon = 0.5 * np.arctan2(U_recon, Q_recon)
-
-    Pdir_truth = np.exp(1j * 2 * zeta_truth) * mask
-    Pdir_recon = np.exp(1j * 2 * zeta_recon) * mask
-
-    # --- Implement Pearson Correlation ---
-
-    # 1. Center the Truth Phasors
-    # Calculate Mean of Truth
-    mean_truth = np.mean(Pdir_truth)
+    # Enforce Truth Magnitude on Reconstruction (Weighting Strategy)
+    # P_new = (P_recon / |P_recon|) * |P_truth|
+    # This evaluates EVPA alignment weighted by Truth signal regions.
+    amp_truth = np.abs(P_truth)
+    amp_recon = np.abs(P_recon_raw)
     
-    # Subtract mean
-    Pdir_truth_centered = Pdir_truth - mean_truth
+    with np.errstate(divide='ignore', invalid='ignore'):
+        P_direction = P_recon_raw / amp_recon
+        P_direction[amp_recon == 0] = 0 # Handle zero-pol pixels
+        
+    P_recon = P_direction * amp_truth
 
-    # 2. Center the Recon Phasors
-    # Calculate Global Mean of Recon
-    mean_recon = np.mean(Pdir_recon)
-    # Subtract mean
-    Pdir_recon_centered = Pdir_recon - mean_recon
-
-    # 3. FFT-based Cross-Correlation (Numerator: Covariance)
-    C_corr = ifft2(fft2(Pdir_recon_centered) * np.conj(fft2(Pdir_truth_centered)))
-
-    # 4. Normalization (Denominator: Sigma_T * Sigma_R)
-    # Variance sum for Truth
-    var_sum_truth = np.sum(np.abs(Pdir_truth_centered)**2)
-
-    # Variance sum for Recon
-    var_sum_recon = np.sum(np.abs(Pdir_recon_centered)**2)
+    # Compute Normalization Factor
+    # Denom = sqrt(sum(|P_truth|^2) * sum(|P_recon|^2))
+    # Since |P_recon| = |P_truth|, Denom = sum(|P_truth|^2)
+    norm_factor = np.sum(amp_truth**2)
     
-    denom = np.sqrt(var_sum_truth) * np.sqrt(var_sum_recon)
+    if norm_factor == 0:
+        return 0.0, 0.0
 
-    if denom > 0:
-        C_corr /= denom
-    else:
-        C_corr[:] = 0.0
+    # FFT-based Cross-Correlation
+    f_truth = fft2(P_truth)
+    f_recon = fft2(P_recon)
+    
+    cc_map = ifft2(f_recon * np.conj(f_truth))
+    nxcorr_map = cc_map / norm_factor
 
     if shift is None:
-        # SEARCH MODE
-        absC = np.abs(C_corr)
-        best_idx = np.unravel_index(np.argmax(absC), absC.shape)
+        # SEARCH MODE: Find alignment maximizing correlation magnitude
+        best_idx = np.unravel_index(np.argmax(np.abs(nxcorr_map)), nxcorr_map.shape)
     else:
-        # NO SHIFT MODE (Zero lag at 0,0)
+        # NO SHIFT MODE: Zero lag
         best_idx = (0, 0)
 
-    max_C = C_corr[best_idx]
+    max_complex_corr = nxcorr_map[best_idx]
     
-    evpa_corr = np.real(max_C)
+    # Return the Real part
+    # Real part of P1 * P2* = |P1||P2|cos(2*chi1 - 2*chi2)
+    # This correctly handles 180-deg EVPA ambiguity (cos(360) = 1)
+    evpa_corr = np.real(max_complex_corr)
+    
+    # Threshold calculation based on truth_chi_rot (in 2-chi space)
     chi_rot_rad = np.deg2rad(truth_chi_rot)
     phase_threshold = np.cos(2 * chi_rot_rad)
 
