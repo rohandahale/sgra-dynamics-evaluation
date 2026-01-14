@@ -1,0 +1,40 @@
+name: evaluation
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Python
+  - python=3.9
+  
+  # Core Scientific Computing
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - h5py
+  - astropy
+  - pyyaml
+  - tqdm
+  
+  # Image Processing
+  - scikit-image
+  - pillow
+  
+  # FFT Libraries (for pynfft/ehtim)
+  - fftw
+  - nfft
+  - pynfft
+  
+  # Julia (for vida_pol.py)
+  - julia=1.10.9
+  
+  # Pip dependencies  
+  - pip
+  - pip:
+    # EHT Imaging Library
+    - ehtim
+    - git+https://github.com/liamedeiros/ehtplot.git
+    
+    # Julia-Python Interface
+    - juliacall
+    - juliapkg
