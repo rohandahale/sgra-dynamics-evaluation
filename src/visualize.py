@@ -40,6 +40,9 @@ def create_parser():
     p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('--fps', type=int, default=10, help='Frames per second for GIFs.')
     p.add_argument('-n', '--ncores', type=int, default=16, help='Number of cores for parallel processing.')
+    p.add_argument('--skip-total', action='store_true', help='Skip generating total intensity GIF.')
+    p.add_argument('--skip-lp', action='store_true', help='Skip generating linear polarization GIF.')
+    p.add_argument('--skip-visvar', action='store_true', help='Skip generating visibility variance plot.')
     return p
 
 def process_obs_local(obs, recon_path, truth_path=None, tstart=None, tstop=None):
@@ -497,10 +500,12 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
             np.save(f"{outpath}_truth_amp_var_{pol}.npy", t_vars[i][0].reshape(npix, npix))
             np.save(f"{outpath}_truth_phase_var_{pol}.npy", t_vars[i][1].reshape(npix, npix))
         
+    # Added two extra rows for the Log-Ratio Metrics (Amp and Phase) if truth exists
     if has_truth:
-        nrows = 4
+        nrows = 6 
     else:
         nrows = 2
+
     ncols = 4
     
     # Use gridspec to create a column for colorbars
@@ -508,28 +513,67 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
     gs = fig.add_gridspec(nrows, ncols + 1, width_ratios=[1, 1, 1, 1, 0.05])
     
     extent = [10, -10, -10, 10]
-    # u_obs, v_obs extracted earlier
     
     col_names = ['I', 'Q', 'U', 'P']
     
     # Re-plotting with global row limits
     for i in range(nrows):
-        # Determine max for the row
+        # Determine max/min for the row
+        vmin = 0
+        vmax = 1
+        cmap = 'binary'
+        
         if has_truth:
-            if i < 2: # Amp
+            if i < 2: # Amp Rows (Truth, Recon)
                 all_amp = []
                 for j in range(ncols):
                     all_amp.append(t_vars[j][0])
                     all_amp.append(r_vars[j][0])
                 vmax = np.max([np.max(d[mask]) for d in all_amp])
                 cmap = 'binary'
-            else: # Phase
+            
+            elif i < 4: # Phase Rows (Truth, Recon)
                 all_phase = []
                 for j in range(ncols):
                     all_phase.append(t_vars[j][1])
                     all_phase.append(r_vars[j][1])
                 vmax = np.max([np.max(d[mask]) for d in all_phase])
-                cmap = 'twilight'
+                cmap = 'inferno'
+            
+            elif i == 4: # Amplitude Log-Ratio (Hallucination Metric)
+                all_ratios = []
+                epsilon = 1e-12 # Prevent div by zero
+                for j in range(ncols):
+                    # Metric: log10( Recon / Truth )
+                    # + epsilon to avoid log(0) or div/0 issues
+                    num = r_vars[j][0] + epsilon
+                    den = t_vars[j][0] + epsilon
+                    ratio = np.log10(num / den)
+                    all_ratios.append(ratio)
+                
+                # Center the colormap around 0
+                max_abs_val = np.max([np.max(np.abs(d[mask])) for d in all_ratios])
+                vmax = max_abs_val
+                vmin = -max_abs_val
+                cmap = 'RdBu_r' # Red = Hallucination (Recon > Truth), Blue = Over-smooth
+            
+            elif i == 5: # Phase Log-Ratio (Hallucination Metric)
+                all_ratios = []
+                epsilon = 1e-12 # Prevent div by zero
+                for j in range(ncols):
+                    # Metric: log10( Recon / Truth )
+                    # + epsilon to avoid log(0) or div/0 issues
+                    num = r_vars[j][1] + epsilon
+                    den = t_vars[j][1] + epsilon
+                    ratio = np.log10(num / den)
+                    all_ratios.append(ratio)
+                
+                # Center the colormap around 0
+                max_abs_val = np.max([np.max(np.abs(d[mask])) for d in all_ratios])
+                vmax = max_abs_val
+                vmin = -max_abs_val
+                cmap = 'RdBu_r' # Red = Hallucination (Recon > Truth), Blue = Over-smooth
+
         else:
             if i == 0:
                 all_amp = [r_vars[j][0] for j in range(ncols)]
@@ -548,28 +592,46 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
                 elif i == 1: data = r_vars[j][0]
                 elif i == 2: data = t_vars[j][1]
                 elif i == 3: data = r_vars[j][1]
+                elif i == 4: 
+                    epsilon = 1e-12
+                    data = np.log10((r_vars[j][0] + epsilon) / (t_vars[j][0] + epsilon))
+                elif i == 5:
+                    epsilon = 1e-12
+                    data = np.log10((r_vars[j][1] + epsilon) / (t_vars[j][1] + epsilon))
             else:
                 if i == 0: data = r_vars[j][0]
                 elif i == 1: data = r_vars[j][1]
                 
-            im = ax.imshow(data.reshape(npix, npix), cmap=cmap, extent=extent, origin='lower', vmin=0, vmax=vmax)
+            im = ax.imshow(data.reshape(npix, npix), cmap=cmap, extent=extent, 
+                           origin='lower', vmin=vmin, vmax=vmax)
             
             # Add max value text
-            current_max = np.max(data[mask])
-            ax.text(0.95, 0.95, f"max: {current_max:.2f}", transform=ax.transAxes,
-                    ha='right', va='top', color='red', fontsize=14)
+            # For the ratio plot, we care about the most extreme deviation (min or max)
+            if i == 4 or i == 5:
+                # current_max = np.max(data[mask])
+                # current_min = np.min(data[mask])
+                # Show whichever is larger in magnitude
+                val_to_show = np.max(data[mask]) #current_max if abs(current_max) > abs(current_min) else current_min
+                ax.text(0.95, 0.95, f"peak: {val_to_show:.2f}", transform=ax.transAxes,
+                        ha='right', va='top', color='black', fontsize=14)
+            else:
+                current_max = np.max(data[mask])
+                ax.text(0.95, 0.95, f"max: {current_max:.2f}", transform=ax.transAxes,
+                        ha='right', va='top', color='red', fontsize=14)
             
             if i == 0:
                 ax.set_title(col_names[j], fontsize=18)
             if j == 0:
                 if has_truth:
-                    lbls = ['Truth Amp Var', 'Recon Amp Var', 'Truth Phase Var', 'Recon Phase Var']
+                    lbls = ['Truth Amp Var', 'Recon Amp Var', 
+                            'Truth Phase Var', 'Recon Phase Var', 
+                            'Log10(R/T) Amp', 'Log10(R/T) Phase'] 
                 else:
                     lbls = ['Recon Amp Var', 'Recon Phase Var']
                 ax.set_ylabel(lbls[i], fontsize=14)
                 
-            ax.plot(u_obs/1e9, v_obs/1e9, '.', color='tab:orange', alpha=0.7)
-            ax.plot(-u_obs/1e9, -v_obs/1e9, '.', color='tab:orange', alpha=0.7)
+            ax.plot(u_obs/1e9, v_obs/1e9, '.', color='tab:orange', alpha=0.3) # Lowered alpha for better visibility
+            ax.plot(-u_obs/1e9, -v_obs/1e9, '.', color='tab:orange', alpha=0.3)
             ax.set_xlim(10, -10)
             ax.set_ylim(-10, 10)
             ax.set_xticks([])
@@ -577,11 +639,10 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
 
             if i == 0 and j == 0:
                 # Add scale bar
-                # x range is [-10, 10] (inverted), width 20. 1/4th is 5.
                 bar_len = 5
-                x_start = 9 # 10 - 5% of 20
+                x_start = 9 
                 x_end = x_start - bar_len
-                y_pos = -9 # -10 + 5% of 20
+                y_pos = -9 
                 ax.plot([x_start, x_end], [y_pos, y_pos], color='blue', linewidth=2)
                 ax.text((x_start + x_end)/2, y_pos + 0.5, f"{bar_len} G$\lambda$", 
                         color='blue', ha='center', va='bottom', fontsize=14)
@@ -593,7 +654,6 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
     plt.tight_layout()
     plt.savefig(f'{outpath}_visvar.png', bbox_inches='tight')
     plt.close(fig)
-
 
 def main():
     args = create_parser().parse_args()
@@ -629,20 +689,29 @@ def main():
         os.makedirs(outdir, exist_ok=True)
         
     # Parallel GIF generation
-    t0 = time.time()
-    generate_gif_parallel(render_total_frame, recon_processed, truth_processed, times, args.outpath, args.fps, 160, args.ncores, "total")
-    t1 = time.time()
-    print(f"Total Intensity GIF took {t1 - t0:.2f} seconds")
+    if not args.skip_total:
+        t0 = time.time()
+        generate_gif_parallel(render_total_frame, recon_processed, truth_processed, times, args.outpath, args.fps, 160, args.ncores, "total")
+        t1 = time.time()
+        print(f"Total Intensity GIF took {t1 - t0:.2f} seconds")
+    else:
+        print("Skipping Total Intensity GIF (--skip-total)")
     
-    t0 = time.time()
-    generate_gif_parallel(render_lp_frame, recon_processed, truth_processed, times, args.outpath, args.fps, 160, args.ncores, "lp")
-    t1 = time.time()
-    print(f"Linear Polarization GIF took {t1 - t0:.2f} seconds")
+    if not args.skip_lp:
+        t0 = time.time()
+        generate_gif_parallel(render_lp_frame, recon_processed, truth_processed, times, args.outpath, args.fps, 160, args.ncores, "lp")
+        t1 = time.time()
+        print(f"Linear Polarization GIF took {t1 - t0:.2f} seconds")
+    else:
+        print("Skipping Linear Polarization GIF (--skip-lp)")
     
-    t0 = time.time()
-    plot_variance(recon_processed, truth_processed, obs, args.outpath, fov, npix, args.ncores)
-    t1 = time.time()
-    print(f"Visibility variance plot took {t1 - t0:.2f} seconds")
+    if not args.skip_visvar:
+        t0 = time.time()
+        plot_variance(recon_processed, truth_processed, obs, args.outpath, fov, npix, args.ncores)
+        t1 = time.time()
+        print(f"Visibility variance plot took {t1 - t0:.2f} seconds")
+    else:
+        print("Skipping Visibility Variance Plot (--skip-visvar)")
     
     print("Done!")
 

@@ -293,11 +293,28 @@ def main():
              
         # g) Visualize
         if config['run_steps']['vizualize']:
-            if not overwrite and os.path.exists(f"{out_prefix}_total.gif") and os.path.exists(f"{out_prefix}_lp.gif"):
-                print(f"Skipping Visualization: GIFs already exist.")
+            total_gif_exists = os.path.exists(f"{out_prefix}_total.gif")
+            lp_gif_exists = os.path.exists(f"{out_prefix}_lp.gif")
+            visvar_exists = os.path.exists(f"{out_prefix}_visvar.png")
+            
+            if not overwrite and total_gif_exists and lp_gif_exists and visvar_exists:
+                print(f"Skipping Visualization: All outputs already exist.")
             else:
                 if visualize_input:
-                    cmd = build_cmd('visualize.py', visualize_input, out_prefix, use_truth=use_truth_for_model)
+                    # Build extra args to skip already existing outputs
+                    viz_extra_args = []
+                    if not overwrite:
+                        if total_gif_exists:
+                            viz_extra_args.append('--skip-total')
+                            print(f"  Will skip _total.gif (already exists)")
+                        if lp_gif_exists:
+                            viz_extra_args.append('--skip-lp')
+                            print(f"  Will skip _lp.gif (already exists)")
+                        if visvar_exists:
+                            viz_extra_args.append('--skip-visvar')
+                            print(f"  Will skip _visvar.png (already exists)")
+                    
+                    cmd = build_cmd('visualize.py', visualize_input, out_prefix, use_truth=use_truth_for_model, extra_args=viz_extra_args)
                     run_command(cmd, "Visualization")
                 else:
                     print("Skipping Visualization: No valid input file (Mean file missing for Bayesian?).")
