@@ -85,13 +85,19 @@ def main():
         print(f"{'='*80}")
         
         # 1. Define Output Directory
-        # "Outpath is <results_dir>/<model>_<pipeline>"
+        # "Outpath is <results_dir>/<model>/<model>_<pipeline>"
         
         # Determine if we should use truth based on model
         sgra_variants = ["SGRA", "sgra", "Sgra", "SgrA"]
         # Use truth only if model is NOT one of the SGRA variants
         use_truth_for_model = model not in sgra_variants
-        out_prefix = os.path.join(results_dir, f"{model}_{pipeline}")
+        
+        # Create model-specific subfolder
+        model_results_dir = os.path.join(results_dir, model)
+        if not os.path.exists(model_results_dir):
+            os.makedirs(model_results_dir)
+        
+        out_prefix = os.path.join(model_results_dir, f"{model}_{pipeline}")
         
         # 2. File Paths construction
         
@@ -261,8 +267,8 @@ def main():
 
         # e2) Pattern Speed v2
         if config['run_steps'].get('patternspeed_v2', False):
-            # Create subfolder
-            v2_dir = os.path.join(results_dir, "patternspeed_v2")
+            # Create subfolder inside model results directory
+            v2_dir = os.path.join(model_results_dir, "patternspeed_v2")
             if not os.path.exists(v2_dir):
                 os.makedirs(v2_dir)
             
