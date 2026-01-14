@@ -582,7 +582,7 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
             else:
                 all_phase = [r_vars[j][1] for j in range(ncols)]
                 vmax = np.max([np.max(d[mask]) for d in all_phase])
-                cmap = 'twilight'
+                cmap = 'inferno'
                 
         for j in range(ncols):
             ax = fig.add_subplot(gs[i, j])
