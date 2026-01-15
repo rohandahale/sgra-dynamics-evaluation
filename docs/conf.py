@@ -15,11 +15,14 @@ version = "0.1.0"
 release = "0.1.0"
 
 # -- General configuration ---------------------------------------------------
+# Note: autodoc and autosummary are disabled until the package is properly
+# structured and dependencies are available in CI. Enable them later by
+# uncommenting the lines below.
 extensions = [
-    "sphinx.ext.autodoc",           # Auto-generate docs from docstrings
-    "sphinx.ext.autosummary",       # Generate summary tables
-    "sphinx.ext.napoleon",          # Support NumPy/Google style docstrings
-    "sphinx.ext.viewcode",          # Add links to source code
+    # "sphinx.ext.autodoc",         # Auto-generate docs from docstrings
+    # "sphinx.ext.autosummary",     # Generate summary tables
+    # "sphinx.ext.napoleon",        # Support NumPy/Google style docstrings
+    # "sphinx.ext.viewcode",        # Add links to source code
     "sphinx.ext.intersphinx",       # Link to other projects' docs
     "sphinx.ext.mathjax",           # Render LaTeX math
     "sphinx_copybutton",            # Copy button for code blocks

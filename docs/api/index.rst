@@ -2,105 +2,76 @@
 API Reference
 =============
 
-This section contains the auto-generated API documentation from the source code.
+This section documents the available modules in the evaluation package.
 
 .. note::
 
-   The API documentation is automatically generated from docstrings in the source 
-   code. If you notice missing documentation, please consider contributing!
+   Full API documentation with auto-generated docstrings will be available 
+   once the package is properly structured as an installable module.
+   For now, please refer to the source code and the :doc:`../theory` section 
+   for detailed information about each module.
 
-Core Modules
-------------
+Available Modules
+-----------------
 
-.. autosummary::
-   :toctree: generated
-   :recursive:
-   :nosignatures:
+The following modules are available in the ``src/`` directory:
 
-   chisq
-   nxcorr
-   rex
-   hotspot
-   patternspeed
-   patternspeed_v2
-   visualize
-   vida_pol
-   preprocess_hdf5
-   mean_image_extraction
+Core Evaluation Metrics
+^^^^^^^^^^^^^^^^^^^^^^^
 
-Module Details
---------------
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
 
-Chi-Squared Analysis
-^^^^^^^^^^^^^^^^^^^^
+   * - Module
+     - Description
+   * - ``chisq.py``
+     - Chi-squared analysis for closure quantities and polarization ratios
+   * - ``nxcorr.py``
+     - Normalized cross-correlation for image fidelity assessment
+   * - ``rex.py``
+     - Ring extraction using the REx algorithm
+   * - ``hotspot.py``
+     - Hotspot tracking and Gaussian fitting
+   * - ``patternspeed.py``
+     - Pattern speed analysis via autocorrelation
+   * - ``patternspeed_v2.py``
+     - Enhanced pattern speed with MCMC uncertainty estimation
 
-.. automodule:: chisq
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Visualization & Utilities
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Normalized Cross-Correlation
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
 
-.. automodule:: nxcorr
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   * - Module
+     - Description
+   * - ``visualize.py``
+     - Visibility variance maps and plotting utilities
+   * - ``vida_pol.py``
+     - VIDA polarimetric analysis (Python interface)
+   * - ``vida_pol.jl``
+     - VIDA polarimetric analysis (Julia implementation)
+   * - ``preprocess_hdf5.py``
+     - HDF5 preprocessing and regridding
+   * - ``mean_image_extraction.py``
+     - Mean image and polarization extraction
 
-Ring Extraction
-^^^^^^^^^^^^^^^
+Usage Example
+-------------
 
-.. automodule:: rex
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Each module can be run as a command-line script:
 
-Hotspot Tracking
-^^^^^^^^^^^^^^^^
+.. code-block:: bash
 
-.. automodule:: hotspot
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   # Chi-squared analysis
+   python src/chisq.py -d observation.uvfits --input "recon/*.h5" -o results/
 
-Pattern Speed Analysis
-^^^^^^^^^^^^^^^^^^^^^^
+   # Normalized cross-correlation  
+   python src/nxcorr.py --truth truth.h5 --input "recon/*.h5" -o results/
 
-.. automodule:: patternspeed
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   # Pattern speed analysis
+   python src/patternspeed.py --truth truth.h5 --input "recon/*.h5" -o results/
 
-.. automodule:: patternspeed_v2
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Visualization
-^^^^^^^^^^^^^
-
-.. automodule:: visualize
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-VIDA Polarimetric Analysis
-^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automodule:: vida_pol
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Preprocessing
-^^^^^^^^^^^^^
-
-.. automodule:: preprocess_hdf5
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. automodule:: mean_image_extraction
-   :members:
-   :undoc-members:
-   :show-inheritance:
+See the :doc:`../usage` guide for more detailed examples.

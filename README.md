@@ -11,12 +11,6 @@ A unified driver to automate the evaluation pipeline for Sgr A* Dynamics project
 
 📚 **[Read the full documentation →](https://rohandahale.github.io/sgra-dynamics-evaluation/)**
 
-The documentation includes:
-- Installation guide
-- Quick start tutorial
-- API reference (auto-generated from docstrings)
-- Mathematical theory for all metrics
-
 ## Installation
 
 ### Conda Environment
@@ -90,17 +84,6 @@ python evaluate.py params.yml
 Results are saved to: `<results_dir>/<model>_<pipeline>/`
 
 The script copies the configuration file used into the results directory for reproducibility.
-
-## Building Documentation Locally
-
-To build the documentation locally:
-
-```bash
-pip install -e ".[docs]"
-cd docs
-sphinx-build -b html . _build/html
-open _build/html/index.html  # or xdg-open on Linux
-```
 
 ## Contributing
 
