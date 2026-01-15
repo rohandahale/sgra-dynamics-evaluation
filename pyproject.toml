@@ -46,10 +46,15 @@ dev = [
     "pytest",
     "pytest-cov",
 ]
+docs = [
+    "sphinx>=7.0",
+    "furo>=2024.0",
+    "sphinx-copybutton>=0.5",
+]
 
 [project.urls]
 Homepage = "https://github.com/rohandahale/sgra-dynamics-evaluation"
-Documentation = "https://github.com/rohandahale/sgra-dynamics-evaluation#readme"
+Documentation = "https://rohandahale.github.io/sgra-dynamics-evaluation/"
 Repository = "https://github.com/rohandahale/sgra-dynamics-evaluation"
 Issues = "https://github.com/rohandahale/sgra-dynamics-evaluation/issues"
 

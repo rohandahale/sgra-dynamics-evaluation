@@ -1,10 +1,21 @@
 # Evaluation and validation scripts for black hole video reconstructions
 
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://rohandahale.github.io/sgra-dynamics-evaluation/)
 [![PyPI version](https://img.shields.io/pypi/v/sgra-dynamics-evaluation.svg)](https://pypi.org/project/sgra-dynamics-evaluation/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A unified driver to automate the evaluation pipeline for Sgr A* Dynamics project submissions.
+
+## Documentation
+
+📚 **[Read the full documentation →](https://rohandahale.github.io/sgra-dynamics-evaluation/)**
+
+The documentation includes:
+- Installation guide
+- Quick start tutorial
+- API reference (auto-generated from docstrings)
+- Mathematical theory for all metrics
 
 ## Installation
 
@@ -80,9 +91,16 @@ Results are saved to: `<results_dir>/<model>_<pipeline>/`
 
 The script copies the configuration file used into the results directory for reproducibility.
 
-## Documentation
+## Building Documentation Locally
 
-For detailed documentation on each evaluation module, see [docs.md](docs.md).
+To build the documentation locally:
+
+```bash
+pip install -e ".[docs]"
+cd docs
+sphinx-build -b html . _build/html
+open _build/html/index.html  # or xdg-open on Linux
+```
 
 ## Contributing
 
