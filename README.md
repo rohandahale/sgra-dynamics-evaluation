@@ -1,21 +1,40 @@
 # Evaluation and validation scripts for black hole video reconstructions
 
+[![PyPI version](https://img.shields.io/pypi/v/sgra-dynamics-evaluation.svg)](https://pypi.org/project/sgra-dynamics-evaluation/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A unified driver to automate the evaluation pipeline for Sgr A* Dynamics project submissions.
 
 ## Installation
 
-### 1. Create Conda Environment
+### Conda Environment
 
 Create and activate the conda environment using the provided `environment.yml`:
 
 ```bash
+git clone https://github.com/rohandahale/sgra-dynamics-evaluation.git
+cd sgra-dynamics-evaluation
 conda env create -f environment.yml
 conda activate evaluation
 ```
 
-### 2. Julia Package Installation (for VIDA metrics)
+## Julia Installation (Optional - for VIDA polarimetric analysis)
 
-The `vida_pol.py` script uses Julia for polarimetric analysis. Install the required Julia packages:
+Julia is only required if you plan to run `vida_pol.py` for polarimetric ring fitting. 
+If you don't need this feature, you can skip this section.
+
+Install Julia 1.10.9 from [juliaup](https://github.com/JuliaLang/juliaup):
+
+```bash
+curl -fsSL https://install.julialang.org | sh
+
+source ~/.bashrc
+juliaup add 1.10.9
+juliaup default 1.10.9
+```
+
+Install the required Julia packages:
 
 ```bash
 cd src
@@ -28,13 +47,13 @@ This reads the `src/Project.toml` and `src/Manifest.toml` to install packages in
 - Comrade
 - Other optimization and data handling packages
 
-### 3. Verify Installation
+## Verify Installation
 
 ```bash
 # Test Python environment
 python -c "import ehtim; import numpy; import pandas; print('Python OK')"
 
-# Test Julia packages
+# Test Julia packages (if installed)
 julia --project=src -e 'using VIDA; using VLBISkyModels; println("Julia OK")'
 ```
 
@@ -64,3 +83,11 @@ The script copies the configuration file used into the results directory for rep
 ## Documentation
 
 For detailed documentation on each evaluation module, see [docs.md](docs.md).
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

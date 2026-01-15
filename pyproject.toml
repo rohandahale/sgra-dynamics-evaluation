@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sgra-dynamics-evaluation"
+version = "0.1.0"
+description = "Evaluation tools for black hole video reconstructions for real and synthetic VLBI data"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Rohan Dahale"}
+]
+keywords = ["astronomy", "vlbi", "eht", "blackhole", "imaging", "evaluation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+requires-python = ">=3.9"
+
+dependencies = [
+    "ehtim>=1.2.4,<2.0",
+    "numpy>=1.21.1,<2.0",
+    "scipy>=1.10.1,<2.0",
+    "pandas>=1.5.3,<3.0",
+    "scikit-image>=0.19.0,<1.0",
+    "networkx>=2.6,<4.0",
+    "matplotlib>=3.5.0,<4.0",
+    "h5py>=3.0,<4.0",
+    "astropy>=5.0,<7.0",
+    "pyyaml>=6.0,<7.0",
+    "tqdm>=4.60,<5.0",
+    "pillow>=9.0,<11.0",
+    "ehtplot @ git+https://github.com/liamedeiros/ehtplot.git",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[project.urls]
+Homepage = "https://github.com/rohandahale/sgra-dynamics-evaluation"
+Documentation = "https://github.com/rohandahale/sgra-dynamics-evaluation#readme"
+Repository = "https://github.com/rohandahale/sgra-dynamics-evaluation"
+Issues = "https://github.com/rohandahale/sgra-dynamics-evaluation/issues"
+
+
+[tool.setuptools]
+packages = ["src"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+src = ["*.jl", "Project.toml", "Manifest.toml"]

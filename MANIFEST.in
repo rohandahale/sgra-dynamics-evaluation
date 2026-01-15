@@ -1,0 +1,20 @@
+# Include documentation and config files
+include README.md
+include LICENSE
+include docs.md
+include params.yml
+
+# Include environment files
+include environment.yml
+
+# Include Julia project files
+include src/Project.toml
+include src/Manifest.toml
+
+# Include Julia source files
+recursive-include src *.jl
+
+# Include test files
+recursive-include tests *.py
+recursive-include tests *.yml
+recursive-include tests *.h5

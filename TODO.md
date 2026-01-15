@@ -1,54 +1,186 @@
-# PyPI Release Readiness Checklist
+# PyPI & PEP 8 Improvement Checklist
+
+This document outlines changes to make the package more professional, pip-installable, and PEP 8 compliant.
 
 ---
+
+## 🚨 Critical: Package Structure
+
+| Item | Status | Priority | Notes |
+|------|--------|----------|-------|
+| Rename `src/` to `ehteval/` | ❌ | High | `src` is too generic; `ehteval` is short and memorable |
+| Rename repo to `ehteval` | ❌ | High | Align repo name with package name |
+| Move `evaluate.py` into package | ❌ | High | Currently in root; should be `ehteval/cli.py` |
+| Add CLI entry points | ❌ | High | Users can't run `ehteval` after `pip install` |
+| Update `pyproject.toml` package name | ❌ | High | Change `name` and `packages` to `ehteval` |
+
+**Proposed structure:**
+```
+ehteval/
+├── ehteval/
+│   ├── __init__.py
+│   ├── cli.py          # moved from evaluate.py
+│   ├── chisq.py
+│   ├── nxcorr.py
+│   └── ...
+├── tests/
+├── pyproject.toml
+└── README.md
+```
+
+---
+
+## 📦 pyproject.toml Improvements
+
+| Item | Status | Priority | Notes |
+|------|--------|----------|-------|
+| Add `[project.scripts]` entry points | ❌ | High | `ehteval = "ehteval.cli:main"` |
+| Pin `ehtplot` to specific commit | ❌ | Medium | Current git+ dep may break; pin with `@<commit>` |
+| Add `[project.optional-dependencies]` for Julia | ❌ | Low | Document `julia` extras group for optional deps |
+| Add Python 3.12 classifier | ❌ | Low | Test and add if compatible |
+
+---
+
+## 🐍 PEP 8 Compliance
+
+### Naming Conventions (PEP 8)
+
+| File | Issue | Priority |
+|------|-------|----------|
+| All files | Function names use `mixedCase` (e.g., `calcWidth`) | Medium |
+| All files | Should be `snake_case` (e.g., `calc_width`) | Medium |
+| `nxcorr.py` | `jensen_shannon_distance` ✅ correct | — |
+| `rex.py` | `extract_ring_quantites` → `extract_ring_quantities` (typo) | Low |
+
+**Non-compliant function names to fix:**
+- `create_parser` ✅ (correct)
+- `compute_ramesh_metric` ✅ (correct)
+- `quad_interp_radius` ✅ (correct)
+- `calc_width` ✅ (correct)
+- But inconsistent: check all files for `camelCase` vs `snake_case`
+
+### Line Length & Formatting
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `pyproject.toml` or `setup.py` | ❌ Missing | **Required** - No build configuration file exists |
-| `setup.cfg` | ❌ Missing | Alternative config (optional if using pyproject.toml) |
-| `src/__init__.py` | ❌ Missing | Package not importable as a Python module |
-| `MANIFEST.in` | ❌ Missing | Needed to include non-Python files (Julia files, YAML, etc.) |
+| Lines > 79/99 chars | ❌ Many | Use `black` or `ruff format` to auto-fix |
+| Inconsistent spacing | ❌ Some | `func(arg1,arg2)` vs `func(arg1, arg2)` |
+| Trailing whitespace | ❌ Unknown | Run linter to check |
 
----
+### Imports (PEP 8)
 
-## Package Structure Issues
+| Issue | Files | Notes |
+|-------|-------|-------|
+| Wildcard imports | `rex.py` line 35 | `from ehtim.const_def import *` should be explicit |
+| Import order | All files | Should be: stdlib → third-party → local |
+| Unused imports | Unknown | Run `ruff` or `flake8` to detect |
 
-| Item | Status | Notes |
-|------|--------|-------|
-| Proper package layout | ❌ Not structured | Scripts are standalone files, not importable modules |
-| Version number | ❌ Missing | No `__version__` defined anywhere |
-| Entry points / CLI | ❌ Missing | No console script entry points defined |
-
----
+### Documentation (PEP 257)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| LICENSE | ✅ Present | MIT License (good) |
-| README.md | ✅ Present | Needs PyPI-specific badges and installation instructions |
-| Tests | ✅ Present | Good test coverage in `tests/` directory |
-| .gitignore | ✅ Present | Already excludes build artifacts |
-| Documentation | ✅ Present | `docs.md` exists |
+| Module docstrings | ❌ Missing | Files lack `"""Module description."""` at top |
+| Function docstrings | ⚠️ Partial | Some functions have docstrings, many don't |
+| Type hints | ❌ Missing | No type annotations (PEP 484) |
+| Docstring style | ⚠️ Mixed | Standardize on numpy or Google style |
 
 ---
 
-## Dependency & Distribution
+## 🔧 Code Quality
 
-| Item | Issue |
-|------|-------|
-| `environment.yml` | Conda-based; pip requires `requirements.txt` or deps in `pyproject.toml` |
-| Julia dependency | Complex: `julia=1.10.9`, `juliacall`, Julia packages via `Project.toml` - requires special handling |
-| Git-based pip deps | `ehtplot` installed from GitHub - should pin to version or host on PyPI |
-| System deps | `fftw`, `nfft`, `pynfft` - may need special build instructions |
+### Warnings & Errors
+
+| Item | File | Notes |
+|------|------|-------|
+| Blanket `warnings.filterwarnings('ignore')` | All files | Should be specific or removed |
+| `print()` statements for logging | All files | Consider using `logging` module |
+| Bare `except:` clauses | Check all | Should catch specific exceptions |
+
+### Code Organization
+
+| Item | Status | Priority |
+|------|--------|----------|
+| Create `utils.py` for shared code | ❌ | Medium |
+| Threading env vars repeated in every file | ❌ | Medium |
+| Matplotlib style config repeated | ❌ | Low |
+
+**Example repeated code (appears in all files):**
+```python
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+```
 
 ---
 
-## Summary of Changes Required
+## 🧪 Testing
 
-1. [ ] **Create `pyproject.toml`** with build system, metadata, dependencies, and entry points
-2. [ ] **Add `src/__init__.py`** to make `src` an importable package (consider renaming to `sgra_dynamics_evaluation`)
-3. [ ] **Add `__version__`** to the package
-4. [ ] **Create `MANIFEST.in`** to include Julia files (`*.jl`, `Project.toml`, `Manifest.toml`), YAML files, and documentation
-5. [ ] **Update README.md** with pip install instructions, badges, and non-conda installation notes
-6. [ ] **Address Julia dependency** - document Julia installation requirement clearly or explore alternatives
-7. [ ] **Pin dependency versions** in pyproject.toml for reproducibility
-8. [ ] **Consider renaming** `src/` to a proper package name like `sgra_dynamics_evaluation/`
+| Item | Status | Notes |
+|------|--------|-------|
+| Tests use `subprocess` to run scripts | ⚠️ | Works, but can't test individual functions |
+| No unit tests for helper functions | ❌ | Add tests for `calc_width`, `pnxcorr`, etc. |
+| Test fixtures | ⚠️ | Using real data files; consider mocking |
+| CI/CD pipeline | ❌ | Add GitHub Actions workflow |
+| Coverage reporting | ❌ | Add `pytest-cov` to dev deps |
+
+---
+
+## 📝 Documentation
+
+| Item | Status | Notes |
+|------|--------|-------|
+| API docs (Sphinx/mkdocs) | ❌ | No auto-generated docs |
+| CHANGELOG.md | ❌ | Missing |
+| CONTRIBUTING.md | ❌ | Missing |
+| Examples directory | ❌ | Could add Jupyter notebooks |
+
+---
+
+## 🚀 Quick Wins (Low Effort, High Impact)
+
+1. [ ] Run `ruff format .` to auto-fix formatting
+2. [ ] Run `ruff check . --fix` to fix import order and unused imports
+3. [ ] Add `[project.scripts]` to `pyproject.toml`
+4. [ ] Fix `extract_ring_quantites` typo
+5. [ ] Add module-level docstrings to all files
+6. [ ] Replace wildcard import in `rex.py`
+
+---
+
+## 📋 Recommended Tool Configuration
+
+Add to `pyproject.toml`:
+
+```toml
+[tool.ruff]
+line-length = 99
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "D"]
+ignore = ["D100", "D104"]  # Allow missing module/package docstrings initially
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+```
+
+---
+
+## Summary
+
+| Category | Ready | Needs Work |
+|----------|-------|------------|
+| Package Structure | ❌ | Rename `src/`, add entry points |
+| PEP 8 Naming | ⚠️ | Mostly OK, some fixes needed |
+| PEP 8 Formatting | ❌ | Run auto-formatter |
+| Documentation | ❌ | Add docstrings and type hints |
+| Testing | ⚠️ | Works but could be improved |
+| Dependencies | ⚠️ | Pin `ehtplot` commit |
+
+**Overall: Not ready for PyPI publication without addressing Critical items.**
