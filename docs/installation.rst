@@ -2,92 +2,64 @@
 Installation
 ============
 
-This guide covers how to install the Sgr A* Dynamics Evaluation package.
-
 Requirements
 ------------
 
-* Python 3.9 or higher
-* Julia 1.6+ (for VIDA polarimetric analysis)
-* Conda (recommended for environment management)
+- Python 3.9+
+- Conda (recommended for environment management)
+- Julia 1.10.9 (optional, for VIDA polarimetric analysis)
 
-Using Conda (Recommended)
--------------------------
 
-We recommend using Conda to manage the environment, especially for the 
-scientific dependencies.
+Conda Environment
+-----------------
+
+Create and activate the conda environment:
 
 .. code-block:: bash
 
-   # Clone the repository
    git clone https://github.com/rohandahale/sgra-dynamics-evaluation.git
    cd sgra-dynamics-evaluation
-
-   # Create conda environment
    conda env create -f environment.yml
+   conda activate evaluation
 
-   # Activate environment
-   conda activate sgra-dynamics-eval
 
-   # Install the package in development mode
-   pip install -e .
+Julia Installation (Optional)
+-----------------------------
 
-Using pip
----------
+Julia is only required if you plan to use ``vida_pol.py`` for polarimetric 
+ring fitting. Skip this section if you don't need this feature.
 
-If you prefer pip, you can install directly:
-
-.. code-block:: bash
-
-   pip install git+https://github.com/rohandahale/sgra-dynamics-evaluation.git
-
-.. warning::
-   
-   Some dependencies like ``ehtim`` may require additional system libraries. 
-   The Conda installation handles these automatically.
-
-Development Installation
-------------------------
-
-For contributing or development:
+Install Julia 1.10.9 via `juliaup <https://github.com/JuliaLang/juliaup>`_:
 
 .. code-block:: bash
 
-   # Clone with full history
-   git clone https://github.com/rohandahale/sgra-dynamics-evaluation.git
-   cd sgra-dynamics-evaluation
+   curl -fsSL https://install.julialang.org | sh
+   source ~/.bashrc
+   juliaup add 1.10.9
+   juliaup default 1.10.9
 
-   # Install with development dependencies
-   pip install -e ".[dev,docs]"
-
-   # Run tests
-   pytest
-
-Julia Setup
------------
-
-For the VIDA polarimetric analysis module, you need Julia installed:
+Install the required Julia packages:
 
 .. code-block:: bash
 
-   # Install Julia (if not already installed)
-   # See: https://julialang.org/downloads/
+   cd src
+   julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-   # Install required Julia packages (automatic on first run)
-   julia -e 'using Pkg; Pkg.instantiate()'
+This reads ``src/Project.toml`` and ``src/Manifest.toml`` to install:
 
-Verification
-------------
+- VIDA
+- VLBISkyModels  
+- Comrade
+- Other optimization packages
 
-Verify your installation:
 
-.. code-block:: python
-
-   import src
-   print(src.__version__)
-   # Should print: 0.1.0
+Verify Installation
+-------------------
 
 .. code-block:: bash
 
-   # Or run the test suite
-   pytest tests/
+   # Test Python environment
+   python -c "import ehtim; import numpy; import pandas; print('Python OK')"
+
+   # Test Julia packages (if installed)
+   julia --project=src -e 'using VIDA; using VLBISkyModels; println("Julia OK")'
